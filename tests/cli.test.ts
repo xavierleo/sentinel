@@ -85,6 +85,73 @@ describe('cli', () => {
     expect(harness.stdout.join('\n')).toContain('8989:8989/tcp');
   });
 
+  it('prints structured Docker inventory with inventory --json', async () => {
+    const harness = createHarness();
+
+    const inventory: RuntimeInventoryResult = {
+      status: 'ok',
+      profiles: [
+        {
+          id: 'sonarr',
+          displayName: 'Sonarr',
+          source: 'runtime_discovery',
+          containerName: 'sonarr',
+          image: 'lscr.io/linuxserver/sonarr:latest',
+          status: 'running',
+          health: 'healthy',
+          ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
+          mounts: [],
+          networks: ['media'],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          lastSeenAt: '2026-05-15T10:00:00.000Z',
+        },
+        {
+          id: 'tdarr',
+          displayName: 'Tdarr',
+          source: 'runtime_discovery',
+          containerName: 'tdarr',
+          image: 'ghcr.io/haveagitgat/tdarr:latest',
+          status: 'exited',
+          health: 'unknown',
+          ports: [],
+          mounts: [],
+          networks: [],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          lastSeenAt: '2026-05-15T10:00:00.000Z',
+        },
+      ],
+    };
+
+    const exitCode = await runCli(['inventory', '--json'], harness.io, {
+      discoverInventory: async () => inventory,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stderr).toEqual([]);
+    expect(harness.stdout).toHaveLength(1);
+    expect(JSON.parse(harness.stdout[0] ?? '')).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-05-15T10:00:00.000Z',
+      counts: {
+        total: 2,
+        running: 1,
+        stopped: 1,
+      },
+      services: inventory.profiles,
+    });
+  });
+
+  it('rejects unsupported inventory flags', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['inventory', '--wat'], harness.io);
+
+    expect(exitCode).toBe(1);
+    expect(harness.stderr.join('\n')).toContain('Unknown inventory option: --wat');
+  });
+
   it('prints a clear inventory error when Docker is missing', async () => {
     const harness = createHarness();
 

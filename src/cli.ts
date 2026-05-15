@@ -18,6 +18,8 @@ Commands:
   --help, -h      Show this help
   status          Show local installation status
   inventory       Show runtime inventory status
+  inventory --json
+                  Show runtime inventory as structured JSON
   daemon          Start daemon (not implemented yet)
   chat            Start chat client (not implemented yet)
   tui             Start TUI client (not implemented yet)`;
@@ -64,12 +66,34 @@ function formatInventory(profiles: RuntimeServiceProfile[]): string {
   ].join('\n');
 }
 
+function countProfiles(profiles: RuntimeServiceProfile[]) {
+  const running = profiles.filter((profile) => profile.status === 'running').length;
+  return {
+    total: profiles.length,
+    running,
+    stopped: profiles.length - running,
+  };
+}
+
+function formatInventoryJson(profiles: RuntimeServiceProfile[]): string {
+  return JSON.stringify(
+    {
+      schemaVersion: 1,
+      generatedAt: profiles[0]?.lastSeenAt ?? new Date().toISOString(),
+      counts: countProfiles(profiles),
+      services: profiles,
+    },
+    null,
+    2,
+  );
+}
+
 export async function runCli(
   argv: string[],
   io: CliIo = defaultIo,
   deps: CliDependencies = defaultDeps,
 ): Promise<number> {
-  const [command] = argv;
+  const [command, ...args] = argv;
 
   switch (command) {
     case undefined:
@@ -93,6 +117,13 @@ TUI: not implemented yet`);
 
     case 'inventory':
       {
+        const json = args.includes('--json');
+        const unsupportedOption = args.find((arg) => arg !== '--json');
+        if (unsupportedOption) {
+          io.stderr(`Unknown inventory option: ${unsupportedOption}`);
+          return 1;
+        }
+
         const result = await deps.discoverInventory();
 
         if (result.status !== 'ok') {
@@ -100,7 +131,7 @@ TUI: not implemented yet`);
           return 2;
         }
 
-        io.stdout(formatInventory(result.profiles));
+        io.stdout(json ? formatInventoryJson(result.profiles) : formatInventory(result.profiles));
         return 0;
       }
 

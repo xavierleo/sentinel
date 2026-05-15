@@ -23,7 +23,7 @@ The installer downloads the latest GitHub Release, verifies its SHA-256 checksum
 To pin a specific version:
 
 ```bash
-SENTINEL_VERSION=0.1.3 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
+SENTINEL_VERSION=0.1.4 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
 ```
 
 After installation:
@@ -32,6 +32,7 @@ After installation:
 sentinel --version
 sentinel status
 sentinel inventory
+sentinel inventory --json
 ```
 
 `sentinel inventory` performs read-only Docker discovery. `sentinel daemon`, `sentinel chat`, and `sentinel tui` are command stubs until their v1.0 milestones are implemented.
@@ -66,6 +67,7 @@ Then run:
 sentinel --version
 sentinel status
 sentinel inventory
+sentinel inventory --json
 ```
 
 ## CI And Releases
@@ -79,8 +81,8 @@ npm ci -> npm test -> npm run typecheck -> npm run build -> npm pack --dry-run
 Releases are created from version tags:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 The release workflow builds the package, creates a release tarball plus SHA-256 checksum, smoke tests the tarball, creates an npm tarball, uploads the artifacts, and attaches them to a GitHub Release.
