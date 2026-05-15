@@ -138,6 +138,16 @@ function truncateToolResult(value: unknown, maxChars: number): string {
   return `${rendered.slice(0, maxChars)}...[truncated]`;
 }
 
+function getDegradedRoute(message: string): { kind: 'inventory_summary' } | undefined {
+  const normalized = message.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  if (normalized.includes('running') && normalized.includes('detail') && !normalized.includes('restart')) {
+    return { kind: 'inventory_summary' };
+  }
+
+  return undefined;
+}
+
 export async function runChatLoop(options: ChatLoopOptions): Promise<string> {
   const { message, config, toolRegistry, callModel, hostname, onTrace } = options;
   const toolNames = toolRegistry.listToolNames();
@@ -227,6 +237,13 @@ export async function runChatLoop(options: ChatLoopOptions): Promise<string> {
       repairAttempts += 1;
       emitTrace(onTrace, { type: 'model_parse_error', message: error instanceof Error ? error.message : String(error) });
       if (repairAttempts > config.agent.max_json_repair_attempts) {
+        const degradedRoute = getDegradedRoute(message);
+        if (degradedRoute?.kind === 'inventory_summary') {
+          emitTrace(onTrace, { type: 'route_selected', route: degradedRoute.kind });
+          emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+          return renderInventorySummary((inventorySummary ?? {}) as InventoryPayload);
+        }
+
         emitTrace(onTrace, { type: 'outcome', outcome: 'safe_failure' });
         return 'I could not finish safely because the model kept returning invalid responses.';
       }

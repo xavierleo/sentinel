@@ -344,6 +344,63 @@ describe('chat loop', () => {
     expect(callModel).toHaveBeenCalledTimes(2);
   });
 
+  it('falls back to deterministic inventory summary after repeated invalid model output for a near-match runtime question', async () => {
+    const callModel = vi.fn(async () => 'definitely not valid json');
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({
+        schemaVersion: 1,
+        counts: { total: 1, running: 1, stopped: 0 },
+        services: [
+          {
+            id: 'sonarr',
+            displayName: 'Sonarr',
+            source: 'runtime_discovery',
+            containerName: 'sonarr',
+            image: 'lscr.io/linuxserver/sonarr:latest',
+            status: 'running',
+            health: 'unknown',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+        ],
+      }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const trace: unknown[] = [];
+    const result = await runChatLoop({
+      message: "what's running in more detail?",
+      config: {
+        ...defaultConfig,
+        agent: {
+          ...defaultConfig.agent,
+          max_json_repair_attempts: 1,
+        },
+      },
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+      onTrace: (entry) => trace.push(entry),
+    });
+
+    expect(result).toContain('Sentinel runtime inventory');
+    expect(result).toContain('Sonarr');
+    expect(callModel).toHaveBeenCalledTimes(2);
+    expect(trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'route_selected', route: 'inventory_summary' }),
+        expect.objectContaining({ type: 'model_raw_output', output: 'definitely not valid json' }),
+        expect.objectContaining({ type: 'model_parse_error' }),
+        expect.objectContaining({ type: 'outcome', outcome: 'routed_response' }),
+      ]),
+    );
+  });
+
   it('accepts fenced JSON model responses without needing repair', async () => {
     const callModel = vi.fn(async () =>
       '```json\n{"thought":"inspect containers","action":"tool_call","tool":"list_containers","args":{}}\n```',
