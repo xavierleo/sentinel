@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createToolRegistry } from '../../src/tools/index.js';
+import { createRuntimeToolRegistry, createToolRegistry } from '../../src/tools/index.js';
+import type { RuntimeInventoryResult } from '../../src/discovery/docker-discovery.js';
 
 describe('tool registry', () => {
   it('only exposes v1.0 read-only tools', () => {
@@ -101,6 +102,107 @@ describe('tool registry', () => {
       name: 'container_logs',
       description: 'Returns recent Docker logs for a container, truncated by default.',
       tier: 'system_read',
+    });
+  });
+
+  it('wires get_runtime_inventory to Docker discovery with structured counts', async () => {
+    const inventory: RuntimeInventoryResult = {
+      status: 'ok',
+      profiles: [
+        {
+          id: 'sonarr',
+          displayName: 'Sonarr',
+          source: 'runtime_discovery',
+          containerName: 'sonarr',
+          image: 'lscr.io/linuxserver/sonarr:latest',
+          status: 'running',
+          health: 'unknown',
+          ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
+          mounts: [],
+          networks: ['cerebro-net'],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          lastSeenAt: '2026-05-15T14:55:42.949Z',
+        },
+        {
+          id: 'tdarr',
+          displayName: 'Tdarr',
+          source: 'runtime_discovery',
+          containerName: 'tdarr',
+          image: 'ghcr.io/haveagitgat/tdarr:latest',
+          status: 'exited',
+          health: 'unknown',
+          ports: [],
+          mounts: [],
+          networks: ['cerebro-net'],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          lastSeenAt: '2026-05-15T14:55:43.949Z',
+        },
+      ],
+    };
+    const discoverInventory = vi.fn(async () => inventory);
+    const registry = createRuntimeToolRegistry({ discoverInventory });
+
+    await expect(registry.get('get_runtime_inventory')?.run({})).resolves.toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-05-15T14:55:42.949Z',
+      counts: {
+        total: 2,
+        running: 1,
+        stopped: 1,
+      },
+      services: inventory.profiles,
+    });
+    expect(discoverInventory).toHaveBeenCalledOnce();
+  });
+
+  it('wires list_containers to Docker discovery profiles', async () => {
+    const inventory: RuntimeInventoryResult = {
+      status: 'ok',
+      profiles: [
+        {
+          id: 'sonarr',
+          displayName: 'Sonarr',
+          source: 'runtime_discovery',
+          containerName: 'sonarr',
+          image: 'lscr.io/linuxserver/sonarr:latest',
+          status: 'running',
+          health: 'unknown',
+          ports: [],
+          mounts: [],
+          networks: [],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          lastSeenAt: '2026-05-15T14:55:42.949Z',
+        },
+      ],
+    };
+    const registry = createRuntimeToolRegistry({
+      discoverInventory: async () => inventory,
+    });
+
+    await expect(registry.get('list_containers')?.run({})).resolves.toEqual(inventory.profiles);
+  });
+
+  it('returns structured inventory errors from get_runtime_inventory', async () => {
+    const registry = createRuntimeToolRegistry({
+      discoverInventory: async () => ({ status: 'daemon_unavailable', message: 'Docker daemon unavailable.' }),
+    });
+
+    await expect(registry.get('get_runtime_inventory')?.run({})).resolves.toEqual({
+      schemaVersion: 1,
+      generatedAt: expect.any(String),
+      counts: {
+        total: 0,
+        running: 0,
+        stopped: 0,
+      },
+      services: [],
+      error: {
+        status: 'daemon_unavailable',
+        message: 'Docker daemon unavailable.',
+      },
     });
   });
 });

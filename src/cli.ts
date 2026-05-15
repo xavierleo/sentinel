@@ -1,5 +1,6 @@
 import { getVersionLabel } from './index.js';
 import { discoverDockerInventory, type RuntimeInventoryResult } from './discovery/docker-discovery.js';
+import { buildRuntimeInventoryPayload } from './discovery/runtime-inventory.js';
 import type { RuntimeServiceProfile } from './discovery/runtime-profile.js';
 
 export interface CliIo {
@@ -66,26 +67,8 @@ function formatInventory(profiles: RuntimeServiceProfile[]): string {
   ].join('\n');
 }
 
-function countProfiles(profiles: RuntimeServiceProfile[]) {
-  const running = profiles.filter((profile) => profile.status === 'running').length;
-  return {
-    total: profiles.length,
-    running,
-    stopped: profiles.length - running,
-  };
-}
-
-function formatInventoryJson(profiles: RuntimeServiceProfile[]): string {
-  return JSON.stringify(
-    {
-      schemaVersion: 1,
-      generatedAt: profiles[0]?.lastSeenAt ?? new Date().toISOString(),
-      counts: countProfiles(profiles),
-      services: profiles,
-    },
-    null,
-    2,
-  );
+function formatInventoryJson(result: RuntimeInventoryResult): string {
+  return JSON.stringify(buildRuntimeInventoryPayload(result), null, 2);
 }
 
 export async function runCli(
@@ -131,7 +114,7 @@ TUI: not implemented yet`);
           return 2;
         }
 
-        io.stdout(json ? formatInventoryJson(result.profiles) : formatInventory(result.profiles));
+        io.stdout(json ? formatInventoryJson(result) : formatInventory(result.profiles));
         return 0;
       }
 

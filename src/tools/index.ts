@@ -1,3 +1,6 @@
+import { discoverDockerInventory, type RuntimeInventoryResult } from '../discovery/docker-discovery.js';
+import { buildRuntimeInventoryPayload } from '../discovery/runtime-inventory.js';
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -9,6 +12,12 @@ export interface ToolDependencies {
   getRuntimeInventory: () => Promise<unknown>;
   getContainerLogs: (name: string, lines?: number) => Promise<string>;
   getHostStatus: () => Promise<unknown>;
+}
+
+export interface RuntimeToolDependencies {
+  discoverInventory?: () => Promise<RuntimeInventoryResult>;
+  getContainerLogs?: (name: string, lines?: number) => Promise<string>;
+  getHostStatus?: () => Promise<unknown>;
 }
 
 function requireContainerName(args: Record<string, unknown>): string {
@@ -76,4 +85,23 @@ export function createToolRegistry(deps: ToolDependencies) {
       return [...tools.keys()].sort();
     },
   };
+}
+
+export function createRuntimeToolRegistry(deps: RuntimeToolDependencies = {}) {
+  const discoverInventory = deps.discoverInventory ?? (() => discoverDockerInventory());
+
+  return createToolRegistry({
+    getRuntimeInventory: async () => buildRuntimeInventoryPayload(await discoverInventory()),
+    getContainerLogs:
+      deps.getContainerLogs ??
+      (async () => {
+        throw new Error('container_logs is not wired to Docker logs yet');
+      }),
+    getHostStatus:
+      deps.getHostStatus ??
+      (async () => ({
+        status: 'not_implemented',
+        message: 'host_status is not wired yet',
+      })),
+  });
 }
