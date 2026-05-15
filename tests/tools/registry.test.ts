@@ -205,4 +205,14 @@ describe('tool registry', () => {
       },
     });
   });
+
+  it('wires container_logs in the runtime registry to Docker logs', async () => {
+    const getContainerLogs = vi.fn(async () => 'log output');
+    const registry = createRuntimeToolRegistry({
+      getContainerLogs,
+    });
+
+    await expect(registry.get('container_logs')?.run({ name: 'radarr', lines: 80 })).resolves.toBe('log output');
+    expect(getContainerLogs).toHaveBeenCalledWith('radarr', 80);
+  });
 });

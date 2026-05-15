@@ -23,7 +23,7 @@ The installer downloads the latest GitHub Release, verifies its SHA-256 checksum
 To pin a specific version:
 
 ```bash
-SENTINEL_VERSION=0.1.5 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
+SENTINEL_VERSION=0.1.6 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
 ```
 
 After installation:
@@ -81,8 +81,8 @@ npm ci -> npm test -> npm run typecheck -> npm run build -> npm pack --dry-run
 Releases are created from version tags:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 The release workflow builds the package, creates a release tarball plus SHA-256 checksum, smoke tests the tarball, creates an npm tarball, uploads the artifacts, and attaches them to a GitHub Release.

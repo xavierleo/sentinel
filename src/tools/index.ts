@@ -1,5 +1,6 @@
 import { discoverDockerInventory, type RuntimeInventoryResult } from '../discovery/docker-discovery.js';
 import { buildRuntimeInventoryPayload } from '../discovery/runtime-inventory.js';
+import { createDockerContainerLogsTool } from './containers.js';
 
 export interface ToolDefinition {
   name: string;
@@ -89,14 +90,11 @@ export function createToolRegistry(deps: ToolDependencies) {
 
 export function createRuntimeToolRegistry(deps: RuntimeToolDependencies = {}) {
   const discoverInventory = deps.discoverInventory ?? (() => discoverDockerInventory());
+  const getContainerLogs = deps.getContainerLogs ?? createDockerContainerLogsTool();
 
   return createToolRegistry({
     getRuntimeInventory: async () => buildRuntimeInventoryPayload(await discoverInventory()),
-    getContainerLogs:
-      deps.getContainerLogs ??
-      (async () => {
-        throw new Error('container_logs is not wired to Docker logs yet');
-      }),
+    getContainerLogs,
     getHostStatus:
       deps.getHostStatus ??
       (async () => ({
