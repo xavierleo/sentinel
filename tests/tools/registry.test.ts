@@ -215,4 +215,17 @@ describe('tool registry', () => {
     await expect(registry.get('container_logs')?.run({ name: 'radarr', lines: 80 })).resolves.toBe('log output');
     expect(getContainerLogs).toHaveBeenCalledWith('radarr', 80);
   });
+
+  it('wires host_status in the runtime registry to host status collection', async () => {
+    const getHostStatus = vi.fn(async () => ({ hostname: 'cerebro', docker: { serverVersion: '28.2.2' } }));
+    const registry = createRuntimeToolRegistry({
+      getHostStatus,
+    });
+
+    await expect(registry.get('host_status')?.run({})).resolves.toEqual({
+      hostname: 'cerebro',
+      docker: { serverVersion: '28.2.2' },
+    });
+    expect(getHostStatus).toHaveBeenCalledOnce();
+  });
 });
