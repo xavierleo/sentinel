@@ -124,4 +124,61 @@ describe('docker discovery', () => {
       mounts: [{ host: '/srv/media/config/sonarr', container: '/config', mode: 'rw' }],
     });
   });
+
+  it('deduplicates equivalent published port bindings', async () => {
+    const psOutput = JSON.stringify({
+      ID: 'pihole123',
+      Names: 'pihole',
+      Image: 'pihole/pihole:latest',
+      State: 'running',
+    });
+    const inspectOutput = JSON.stringify([
+      {
+        Id: 'pihole123456789',
+        Name: '/pihole',
+        Config: {
+          Image: 'pihole/pihole:latest',
+          Labels: {},
+        },
+        State: { Status: 'running' },
+        Created: '2026-05-15T10:00:00Z',
+        HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+        NetworkSettings: {
+          Ports: {
+            '53/tcp': [
+              { HostIp: '0.0.0.0', HostPort: '53' },
+              { HostIp: '::', HostPort: '53' },
+            ],
+            '53/udp': [
+              { HostIp: '0.0.0.0', HostPort: '53' },
+              { HostIp: '::', HostPort: '53' },
+            ],
+            '80/tcp': [
+              { HostIp: '0.0.0.0', HostPort: '8053' },
+              { HostIp: '::', HostPort: '8053' },
+            ],
+          },
+          Networks: {},
+        },
+        Mounts: [],
+      },
+    ]);
+
+    const result = await discoverDockerInventory({
+      run: createRunner({
+        'docker ps -a --format json': psOutput,
+        'docker inspect pihole123': inspectOutput,
+      }),
+    });
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') {
+      throw new Error('Expected successful inventory');
+    }
+    expect(result.profiles[0]?.ports).toEqual([
+      { host: 53, container: 53, protocol: 'tcp' },
+      { host: 53, container: 53, protocol: 'udp' },
+      { host: 8053, container: 80, protocol: 'tcp' },
+    ]);
+  });
 });

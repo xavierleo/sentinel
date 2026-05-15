@@ -111,6 +111,7 @@ function parseInspect(stdout: string): DockerInspectContainer[] {
 }
 
 function parsePorts(ports: unknown): DockerContainerSummary['ports'] {
+  const seen = new Set<string>();
   return Object.entries(objectRecord(ports)).flatMap(([containerPort, bindings]) => {
     const [portText, protocolText] = containerPort.split('/');
     const container = Number(portText);
@@ -122,7 +123,12 @@ function parsePorts(ports: unknown): DockerContainerSummary['ports'] {
 
     return bindings.flatMap((binding) => {
       const host = Number(objectRecord(binding).HostPort);
-      return Number.isFinite(host) ? [{ host, container, protocol }] : [];
+      const key = `${host}:${container}/${protocol}`;
+      if (!Number.isFinite(host) || seen.has(key)) {
+        return [];
+      }
+      seen.add(key);
+      return [{ host, container, protocol }];
     });
   });
 }
