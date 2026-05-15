@@ -24,8 +24,25 @@ type InventoryPayload = {
     displayName?: string;
     containerName?: string;
     status?: string;
+    health?: string;
     ports?: Array<{ host: number; container: number; protocol: string }>;
   }>;
+};
+
+type HostStatusPayload = {
+  hostname?: string;
+  platform?: { kernel?: string };
+  uptime?: string;
+  memory?: { totalMb?: number; usedMb?: number; freeMb?: number; availableMb?: number };
+  rootDisk?: {
+    filesystem?: string;
+    size?: string;
+    used?: string;
+    available?: string;
+    percentUsed?: string;
+    mountpoint?: string;
+  };
+  docker?: { serverVersion?: string; composeVersion?: string };
 };
 
 function summarizeInventory(inventory: unknown): string {
@@ -60,6 +77,54 @@ function renderInventorySummary(inventory: InventoryPayload): string {
   }
 
   return lines.join('\n');
+}
+
+function renderInventoryUnhealthy(inventory: InventoryPayload): string {
+  const services = (inventory.services ?? []).filter((service) => {
+    const status = service.status?.toLowerCase();
+    const health = service.health?.toLowerCase();
+    return status !== 'running' || (health !== undefined && health !== 'healthy');
+  });
+
+  const lines = ['Unhealthy containers'];
+  if (services.length === 0) {
+    lines.push('None');
+    return lines.join('\n');
+  }
+
+  for (const service of services) {
+    lines.push(
+      `- ${service.displayName ?? service.containerName ?? 'Unknown'} | status: ${service.status ?? 'unknown'} | health: ${service.health ?? 'unknown'}`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function renderContainerLogs(containerName: string, logs: string): string {
+  return [`Recent logs for ${containerName}`, logs].join('\n');
+}
+
+function renderHostStatus(status: HostStatusPayload): string {
+  const memory = status.memory;
+  const rootDisk = status.rootDisk;
+  const docker = status.docker;
+
+  return [
+    'Host status',
+    `Hostname: ${status.hostname ?? 'unknown'}`,
+    `Platform: ${status.platform?.kernel ?? 'unknown'}`,
+    `Uptime: ${status.uptime ?? 'unknown'}`,
+    memory
+      ? `Memory: ${memory.usedMb ?? 'unknown'}/${memory.totalMb ?? 'unknown'} MB used, ${memory.availableMb ?? 'unknown'} MB available`
+      : 'Memory: unknown',
+    rootDisk
+      ? `Root disk: ${rootDisk.used ?? 'unknown'}/${rootDisk.size ?? 'unknown'} used on ${rootDisk.mountpoint ?? 'unknown'}`
+      : 'Root disk: unknown',
+    docker
+      ? `Docker: server ${docker.serverVersion ?? 'unknown'}, compose ${docker.composeVersion ?? 'unknown'}`
+      : 'Docker: unknown',
+  ].join('\n');
 }
 
 function buildPrompt(
@@ -125,6 +190,37 @@ export async function runChatLoop(options: ChatLoopOptions): Promise<string> {
   if (route.kind === 'inventory_summary') {
     emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
     return renderInventorySummary((inventorySummary ?? {}) as InventoryPayload);
+  }
+
+  if (route.kind === 'inventory_unhealthy') {
+    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+    return renderInventoryUnhealthy((inventorySummary ?? {}) as InventoryPayload);
+  }
+
+  if (route.kind === 'container_logs') {
+    emitTrace(onTrace, { type: 'tool_call', tool: 'container_logs', args: { name: route.containerName } });
+    const logs = await toolRegistry.get('container_logs')?.run({ name: route.containerName });
+    const renderedLogs = renderContainerLogs(route.containerName, typeof logs === 'string' ? logs : '');
+    emitTrace(onTrace, {
+      type: 'tool_result',
+      tool: 'container_logs',
+      preview: renderedLogs,
+    });
+    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+    return renderedLogs;
+  }
+
+  if (route.kind === 'host_summary') {
+    emitTrace(onTrace, { type: 'tool_call', tool: 'host_status', args: {} });
+    const hostStatus = (await toolRegistry.get('host_status')?.run({})) as HostStatusPayload | undefined;
+    const renderedHostStatus = renderHostStatus(hostStatus ?? {});
+    emitTrace(onTrace, {
+      type: 'tool_result',
+      tool: 'host_status',
+      preview: renderedHostStatus,
+    });
+    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+    return renderedHostStatus;
   }
 
   for (let toolCalls = 0; toolCalls < config.agent.max_tool_calls_per_request; ) {

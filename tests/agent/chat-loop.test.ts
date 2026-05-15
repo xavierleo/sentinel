@@ -4,7 +4,7 @@ import { createToolRegistry } from '../../src/tools/index.js';
 import { defaultConfig } from '../../src/config/defaults.js';
 
 describe('chat loop', () => {
-  it('collects a trace for deterministic routed inventory answers', async () => {
+  it('answers inventory summary questions without calling the model', async () => {
     const callModel = vi.fn(async () => {
       throw new Error('model should not be called');
     });
@@ -45,6 +45,7 @@ describe('chat loop', () => {
     });
 
     expect(result).toContain('Sentinel runtime inventory');
+    expect(result).toContain('Sonarr | running');
     expect(callModel).not.toHaveBeenCalled();
     expect(trace).toEqual(
       expect.arrayContaining([
@@ -52,6 +53,136 @@ describe('chat loop', () => {
         expect.objectContaining({ type: 'outcome', outcome: 'routed_response' }),
       ]),
     );
+  });
+
+  it('answers recent log questions without calling the model', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({ schemaVersion: 1, counts: { total: 0, running: 0, stopped: 0 }, services: [] }),
+      getContainerLogs: async () => 'line one\nline two',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const trace: unknown[] = [];
+    const result = await runChatLoop({
+      message: 'show me recent logs for sonarr',
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+      onTrace: (entry) => trace.push(entry),
+    });
+
+    expect(result).toContain('Recent logs for sonarr');
+    expect(result).toContain('line one');
+    expect(callModel).not.toHaveBeenCalled();
+    expect(trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'route_selected', route: 'container_logs' }),
+        expect.objectContaining({ type: 'outcome', outcome: 'routed_response' }),
+      ]),
+    );
+  });
+
+  it('answers unhealthy inventory questions without calling the model', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({
+        schemaVersion: 1,
+        counts: { total: 3, running: 1, stopped: 2 },
+        services: [
+          {
+            id: 'sonarr',
+            displayName: 'Sonarr',
+            source: 'runtime_discovery',
+            containerName: 'sonarr',
+            image: 'lscr.io/linuxserver/sonarr:latest',
+            status: 'running',
+            health: 'healthy',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+          {
+            id: 'radarr',
+            displayName: 'Radarr',
+            source: 'runtime_discovery',
+            containerName: 'radarr',
+            image: 'lscr.io/linuxserver/radarr:latest',
+            status: 'exited',
+            health: 'unhealthy',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+        ],
+      }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const result = await runChatLoop({
+      message: 'what is unhealthy right now?',
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+    });
+
+    expect(result).toContain('Unhealthy containers');
+    expect(result).toContain('Radarr');
+    expect(callModel).not.toHaveBeenCalled();
+  });
+
+  it('answers host summary questions without calling the model', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({ schemaVersion: 1, counts: { total: 0, running: 0, stopped: 0 }, services: [] }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({
+        schemaVersion: 1,
+        hostname: 'cerebro',
+        platform: { kernel: 'Linux 6.8.0' },
+        uptime: 'up 4 days',
+        memory: { totalMb: 16384, usedMb: 4096, freeMb: 12288, availableMb: 12288 },
+        rootDisk: {
+          filesystem: '/dev/sda1',
+          size: '100G',
+          used: '40G',
+          available: '60G',
+          percentUsed: '40%',
+          mountpoint: '/',
+        },
+        docker: {
+          serverVersion: '28.2.2',
+          composeVersion: '2.27.0',
+        },
+      }),
+    });
+
+    const result = await runChatLoop({
+      message: 'how is the host doing?',
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+    });
+
+    expect(result).toContain('Host status');
+    expect(result).toContain('cerebro');
+    expect(callModel).not.toHaveBeenCalled();
   });
 
   it('returns a direct model response without calling tools', async () => {
