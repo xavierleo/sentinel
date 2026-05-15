@@ -4,6 +4,56 @@ import { createToolRegistry } from '../../src/tools/index.js';
 import { defaultConfig } from '../../src/config/defaults.js';
 
 describe('chat loop', () => {
+  it('collects a trace for deterministic routed inventory answers', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({
+        schemaVersion: 1,
+        counts: { total: 2, running: 1, stopped: 1 },
+        services: [
+          {
+            id: 'sonarr',
+            displayName: 'Sonarr',
+            source: 'runtime_discovery',
+            containerName: 'sonarr',
+            image: 'lscr.io/linuxserver/sonarr:latest',
+            status: 'running',
+            health: 'unknown',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+        ],
+      }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const trace: unknown[] = [];
+    const result = await runChatLoop({
+      message: "what's running?",
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+      onTrace: (entry) => trace.push(entry),
+    });
+
+    expect(result).toContain('Sentinel runtime inventory');
+    expect(callModel).not.toHaveBeenCalled();
+    expect(trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'route_selected', route: 'inventory_summary' }),
+        expect.objectContaining({ type: 'outcome', outcome: 'routed_response' }),
+      ]),
+    );
+  });
+
   it('returns a direct model response without calling tools', async () => {
     const callModel = vi.fn(async () => '{"thought":"answer directly","action":"respond","response":"Sonarr is running."}');
     const registry = createToolRegistry({
@@ -13,7 +63,7 @@ describe('chat loop', () => {
     });
 
     const result = await runChatLoop({
-      message: "what's running?",
+      message: 'tell me about sonarr',
       config: defaultConfig,
       toolRegistry: registry,
       callModel,
@@ -59,7 +109,7 @@ describe('chat loop', () => {
     });
 
     const result = await runChatLoop({
-      message: "what's running?",
+      message: 'inspect containers with tools',
       config: defaultConfig,
       toolRegistry: registry,
       callModel,
@@ -107,7 +157,7 @@ describe('chat loop', () => {
     });
 
     const result = await runChatLoop({
-      message: "what's running?",
+      message: 'inspect containers with fenced json',
       config: {
         ...defaultConfig,
         agent: {
