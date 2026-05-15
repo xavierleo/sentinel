@@ -10,7 +10,27 @@ Fresh install -> daemon discovers Docker state -> sentinel chat -> "what's runni
 
 Filesystem reads, container actions, Telegram, scheduling, service APIs, and provisioning are intentionally out of scope for v1.0.
 
-## Local Linux Install
+## Quick Install
+
+Linux, macOS, and WSL2:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
+```
+
+The installer clones or updates Sentinel in `~/.sentinel/sentinel`, installs npm dependencies, runs the test suite, builds the CLI, and links the `sentinel` command.
+
+After installation:
+
+```bash
+sentinel --version
+sentinel status
+sentinel inventory
+```
+
+`sentinel inventory`, `sentinel daemon`, `sentinel chat`, and `sentinel tui` are command stubs until the next runtime-discovery milestone is implemented.
+
+## Manual Linux Install
 
 Sentinel currently installs as a local Node package from this project directory.
 
@@ -38,8 +58,6 @@ sentinel --version
 sentinel status
 sentinel inventory
 ```
-
-`sentinel inventory`, `sentinel daemon`, `sentinel chat`, and `sentinel tui` are command stubs until the next runtime-discovery milestone is implemented.
 
 ## CI And Releases
 

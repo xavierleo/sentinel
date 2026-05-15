@@ -21,4 +21,28 @@ describe('install script', () => {
     expect(source).toContain('npm link');
     expect(source).not.toContain('YOUR_USER');
   });
+
+  it('supports the public quick install command', () => {
+    const source = readFileSync('scripts/install.sh', 'utf8');
+
+    expect(source).toContain('https://github.com/xavierleo/sentinel.git');
+    expect(source).toContain('SENTINEL_INSTALL_DIR');
+    expect(source).toContain('SENTINEL_BRANCH');
+    expect(source).toContain('raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh');
+  });
+
+  it('can bootstrap Sentinel when streamed outside a checkout', () => {
+    const source = readFileSync('scripts/install.sh', 'utf8');
+
+    expect(source).toContain('git clone');
+    expect(source).toContain('pull --ff-only');
+    expect(source).toContain('$HOME/.sentinel/sentinel');
+    expect(source).toContain('PROJECT_ROOT=');
+  });
+
+  it('keeps installer logs out of command-substituted paths', () => {
+    const source = readFileSync('scripts/install.sh', 'utf8');
+
+    expect(source).toContain("printf '[sentinel] %s\\n' \"$1\" >&2");
+  });
 });
