@@ -315,6 +315,7 @@ describe('chat loop', () => {
 
     expect(result).toBe('I found Sonarr running on port 8989.');
     expect(callModel).toHaveBeenCalledTimes(2);
+    expect(callModel.mock.calls[1]?.[0]).toContain('AVAILABLE TOOLS:');
     expect(callModel.mock.calls[1]?.[0]).toContain('"tool":"list_containers"');
     expect(callModel.mock.calls[1]?.[0]).toContain('"containerName":"sonarr"');
   });

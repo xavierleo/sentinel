@@ -1,6 +1,7 @@
 import type { SentinelConfig } from '../config/schema.js';
 import { parseDecision } from './decision-parser.js';
 import { classifyIntent } from './intent-router.js';
+import { buildPrompt } from './prompt-builder.js';
 import { emitTrace, type TurnTraceCallback } from './turn-trace.js';
 import type { ToolDefinition } from '../tools/index.js';
 
@@ -44,14 +45,6 @@ type HostStatusPayload = {
   };
   docker?: { serverVersion?: string; composeVersion?: string };
 };
-
-function summarizeInventory(inventory: unknown): string {
-  try {
-    return JSON.stringify(inventory);
-  } catch {
-    return '{"error":"inventory summary unavailable"}';
-  }
-}
 
 function formatPorts(ports: Array<{ host: number; container: number; protocol: string }> | undefined): string {
   if (!ports || ports.length === 0) {
@@ -137,48 +130,6 @@ function renderHostStatusFailure(error: unknown): string {
   return `Unable to read host status: ${message}`;
 }
 
-function buildPrompt(
-  hostname: string,
-  userMessage: string,
-  inventorySummary: unknown,
-  toolNames: string[],
-  transcript: string[],
-  repairInstruction?: string,
-): string {
-  const sections = [
-    `You are Sentinel, a homelab assistant running on ${hostname}.`,
-    '',
-    'You help the user understand and safely operate their existing Docker-based homelab.',
-    '',
-    'CURRENT RUNTIME INVENTORY:',
-    summarizeInventory(inventorySummary),
-    '',
-    'RULES:',
-    '1. Use the runtime inventory as the source of truth.',
-    '2. You may only choose typed tools provided in this request.',
-    '3. Never invent shell commands.',
-    '4. Admit when something is outside your capability.',
-    '',
-    'RESPONSE FORMAT:',
-    'Return valid JSON only.',
-    'Allowed decision actions in v1.x:',
-    '- respond',
-    '- tool_call',
-    '',
-    `AVAILABLE TOOLS: ${toolNames.join(', ')}`,
-    '',
-    `USER MESSAGE: ${userMessage}`,
-    '',
-    ...transcript,
-  ];
-
-  if (repairInstruction) {
-    sections.push('', repairInstruction);
-  }
-
-  return sections.join('\n');
-}
-
 function truncateToolResult(value: unknown, maxChars: number): string {
   const rendered = typeof value === 'string' ? value : JSON.stringify(value);
   if (rendered.length <= maxChars) {
@@ -256,14 +207,15 @@ export async function runChatLoop(options: ChatLoopOptions): Promise<string> {
   }
 
   for (let toolCalls = 0; toolCalls < config.agent.max_tool_calls_per_request; ) {
-    const prompt = buildPrompt(
+    const prompt = buildPrompt({
       hostname,
-      message,
+      userMessage: message,
       inventorySummary,
       toolNames,
       transcript,
-      repairAttempts > 0 ? 'Your previous response was invalid. Return valid JSON matching the required schema only.' : undefined,
-    );
+      repairInstruction:
+        repairAttempts > 0 ? 'Your previous response was invalid. Return valid JSON matching the required schema only.' : undefined,
+    });
 
     const raw = await callModel(prompt);
     emitTrace(onTrace, { type: 'model_raw_output', output: raw });
