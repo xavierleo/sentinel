@@ -163,6 +163,28 @@ describe('cli', () => {
     expect(harness.stderr.join('\n')).toContain('Docker is not installed');
   });
 
+  it('runs chat with --message through the chat loop', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['chat', '--message', "what's running?"], harness.io, {
+      discoverInventory: async () => ({ status: 'ok', profiles: [] }),
+      runChat: async (message) => `echo:${message}`,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stdout).toEqual(["echo:what's running?"]);
+    expect(harness.stderr).toEqual([]);
+  });
+
+  it('rejects chat without --message for now', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['chat'], harness.io);
+
+    expect(exitCode).toBe(1);
+    expect(harness.stderr.join('\n')).toContain('chat currently requires --message');
+  });
+
   it('rejects unknown commands', async () => {
     const harness = createHarness();
 

@@ -1,7 +1,11 @@
+import { runChatLoop } from './agent/chat-loop.js';
+import { createOllamaDecisionCaller } from './agent/ollama-client.js';
+import { defaultConfig } from './config/defaults.js';
 import { getVersionLabel } from './index.js';
 import { discoverDockerInventory, type RuntimeInventoryResult } from './discovery/docker-discovery.js';
 import { buildRuntimeInventoryPayload } from './discovery/runtime-inventory.js';
 import type { RuntimeServiceProfile } from './discovery/runtime-profile.js';
+import { createRuntimeToolRegistry } from './tools/index.js';
 
 export interface CliIo {
   stdout: (message: string) => void;
@@ -10,6 +14,7 @@ export interface CliIo {
 
 export interface CliDependencies {
   discoverInventory: () => Promise<RuntimeInventoryResult>;
+  runChat: (message: string) => Promise<string>;
 }
 
 const usage = `Usage: sentinel <command>
@@ -32,6 +37,14 @@ const defaultIo: CliIo = {
 
 const defaultDeps: CliDependencies = {
   discoverInventory: () => discoverDockerInventory(),
+  runChat: async (message: string) =>
+    runChatLoop({
+      message,
+      config: defaultConfig,
+      toolRegistry: createRuntimeToolRegistry(),
+      callModel: createOllamaDecisionCaller(defaultConfig),
+      hostname: 'localhost',
+    }),
 };
 
 function printNotImplemented(command: string, io: CliIo): number {
@@ -71,11 +84,25 @@ function formatInventoryJson(result: RuntimeInventoryResult): string {
   return JSON.stringify(buildRuntimeInventoryPayload(result), null, 2);
 }
 
+function parseChatMessageArgs(args: string[]): { ok: true; message: string } | { ok: false; error: string } {
+  if (args[0] !== '--message') {
+    return { ok: false, error: 'chat currently requires --message "<text>"' };
+  }
+
+  const message = args.slice(1).join(' ').trim();
+  if (!message) {
+    return { ok: false, error: 'chat currently requires --message "<text>"' };
+  }
+
+  return { ok: true, message };
+}
+
 export async function runCli(
   argv: string[],
   io: CliIo = defaultIo,
-  deps: CliDependencies = defaultDeps,
+  deps: Partial<CliDependencies> = defaultDeps,
 ): Promise<number> {
+  const resolvedDeps: CliDependencies = { ...defaultDeps, ...deps };
   const [command, ...args] = argv;
 
   switch (command) {
@@ -107,7 +134,7 @@ TUI: not implemented yet`);
           return 1;
         }
 
-        const result = await deps.discoverInventory();
+        const result = await resolvedDeps.discoverInventory();
 
         if (result.status !== 'ok') {
           io.stderr(result.message);
@@ -119,9 +146,25 @@ TUI: not implemented yet`);
       }
 
     case 'daemon':
-    case 'chat':
     case 'tui':
       return printNotImplemented(command, io);
+
+    case 'chat':
+      {
+        const parsed = parseChatMessageArgs(args);
+        if (!parsed.ok) {
+          io.stderr(parsed.error);
+          return 1;
+        }
+
+        try {
+          io.stdout(await resolvedDeps.runChat(parsed.message));
+          return 0;
+        } catch (error) {
+          io.stderr(error instanceof Error ? error.message : String(error));
+          return 2;
+        }
+      }
 
     default:
       io.stderr(`Unknown command: ${command}`);
