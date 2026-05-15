@@ -4,10 +4,9 @@ set -euo pipefail
 # Quick install:
 #   curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
 
-REPO_URL="https://github.com/xavierleo/sentinel.git"
-DEFAULT_INSTALL_DIR="$HOME/.sentinel/sentinel"
-INSTALL_DIR="${SENTINEL_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
-BRANCH="${SENTINEL_BRANCH:-main}"
+REPO="xavierleo/sentinel"
+INSTALL_DIR="${SENTINEL_INSTALL_DIR:-$HOME/.sentinel}"
+BIN_PATH="/usr/local/bin/sentinel"
 
 log() {
   printf '[sentinel] %s\n' "$1" >&2
@@ -22,39 +21,71 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-resolve_project_root() {
-  local script_path="${BASH_SOURCE[0]:-}"
-  local script_dir=""
+sha256_file() {
+  local file="$1"
 
-  if [ -n "$script_path" ] && [ -f "$script_path" ]; then
-    script_dir="$(cd -- "$(dirname -- "$script_path")" && pwd)"
-    local candidate_root
-    candidate_root="$(cd -- "${script_dir}/.." && pwd)"
-
-    if [ -f "${candidate_root}/package.json" ] && [ -d "${candidate_root}/src" ]; then
-      printf '%s\n' "$candidate_root"
-      return 0
-    fi
+  if command_exists sha256sum; then
+    sha256sum "$file" | awk '{print $1}'
+    return 0
   fi
 
-  command_exists git || fail "Git is required for quick install. Install git, then rerun this command."
-
-  if [ -d "${INSTALL_DIR}/.git" ]; then
-    log "Updating Sentinel in ${INSTALL_DIR}"
-    git -C "${INSTALL_DIR}" fetch origin "${BRANCH}"
-    git -C "${INSTALL_DIR}" checkout "${BRANCH}"
-    git -C "${INSTALL_DIR}" pull --ff-only origin "${BRANCH}"
-  else
-    log "Cloning Sentinel into ${INSTALL_DIR}"
-    mkdir -p "$(dirname -- "${INSTALL_DIR}")"
-    git clone --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
+  if command_exists shasum; then
+    shasum -a 256 "$file" | awk '{print $1}'
+    return 0
   fi
 
-  printf '%s\n' "$INSTALL_DIR"
+  fail "sha256sum or shasum is required to verify the release."
 }
 
-PROJECT_ROOT="$(resolve_project_root)"
+resolve_tag() {
+  if [ -n "${SENTINEL_VERSION:-}" ]; then
+    printf 'v%s\n' "${SENTINEL_VERSION#v}"
+    return 0
+  fi
 
+  curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    | grep '"tag_name"' \
+    | head -1 \
+    | sed 's/.*"tag_name": "\(.*\)".*/\1/'
+}
+
+assert_safe_tarball() {
+  local tarball="$1"
+
+  while IFS= read -r entry; do
+    case "$entry" in
+      /*|*../*|../*|.*../*|"")
+        fail "Unsafe tarball entry: ${entry}"
+        ;;
+    esac
+  done < <(tar -tzf "$tarball")
+}
+
+write_wrapper() {
+  local wrapper
+
+  wrapper="$(cat <<WRAPPER_EOF
+#!/usr/bin/env bash
+NODE_BIN="\$(command -v node || true)"
+if [ -z "\${NODE_BIN}" ]; then
+  echo "Node.js is not available. Install Node.js 22 or newer, then rerun the Sentinel installer." >&2
+  exit 1
+fi
+exec "\${NODE_BIN}" "${INSTALL_DIR}/dist/index.js" "\$@"
+WRAPPER_EOF
+)"
+
+  if [ -w "$(dirname "$BIN_PATH")" ]; then
+    printf '%s\n' "$wrapper" > "$BIN_PATH"
+    chmod +x "$BIN_PATH"
+  else
+    printf '%s\n' "$wrapper" | sudo tee "$BIN_PATH" >/dev/null
+    sudo chmod +x "$BIN_PATH"
+  fi
+}
+
+command_exists curl || fail "curl is required to install Sentinel."
+command_exists tar || fail "tar is required to install Sentinel."
 command_exists node || fail "Node.js is required. Install Node 22 or newer first."
 command_exists npm || fail "npm is required. Install Node 22 or newer first."
 
@@ -63,28 +94,71 @@ if [ "${NODE_MAJOR}" -lt 22 ]; then
   fail "Node 22 or newer is required. Current version: $(node --version)"
 fi
 
-cd "${PROJECT_ROOT}"
-
-log "Installing npm dependencies"
-npm install
-
-if [ "${SENTINEL_SKIP_TESTS:-0}" != "1" ]; then
-  log "Running test suite"
-  npm test
-else
-  log "Skipping tests because SENTINEL_SKIP_TESTS=1"
+TAG="$(resolve_tag)"
+if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  fail "Invalid release tag: ${TAG}"
 fi
 
-log "Building Sentinel"
-npm run build
+VERSION="${TAG#v}"
+TARBALL="sentinel-${VERSION}.tar.gz"
+RELEASE_URL="https://github.com/${REPO}/releases/download/${TAG}/${TARBALL}"
+SHA256_URL="${RELEASE_URL}.sha256"
 
-if [ "${SENTINEL_SKIP_LINK:-0}" != "1" ]; then
-  log "Linking sentinel command with npm link"
-  npm link
-else
-  log "Skipping npm link because SENTINEL_SKIP_LINK=1"
+log "Downloading Sentinel ${TAG}"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+curl -fsSL --progress-bar -o "${TMP_DIR}/${TARBALL}" "$RELEASE_URL"
+curl -fsSL -o "${TMP_DIR}/${TARBALL}.sha256" "$SHA256_URL"
+
+log "Verifying checksum"
+EXPECTED_SHA="$(awk '{print $1}' "${TMP_DIR}/${TARBALL}.sha256")"
+ACTUAL_SHA="$(sha256_file "${TMP_DIR}/${TARBALL}")"
+
+if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+  fail "Checksum mismatch. Expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}."
 fi
 
-log "Install complete"
+assert_safe_tarball "${TMP_DIR}/${TARBALL}"
+
+log "Installing to ${INSTALL_DIR}"
+EXTRACT_DIR="${TMP_DIR}/extract"
+mkdir -p "$EXTRACT_DIR"
+tar -xzf "${TMP_DIR}/${TARBALL}" -C "$EXTRACT_DIR"
+
+for required in dist/index.js scripts/install.sh package.json package-lock.json; do
+  if [ ! -f "${EXTRACT_DIR}/${required}" ]; then
+    fail "Release tarball is missing ${required}"
+  fi
+done
+
+BACKUP_DIR="${INSTALL_DIR}.previous"
+rm -rf "$BACKUP_DIR"
+if [ -d "$INSTALL_DIR" ]; then
+  mv "$INSTALL_DIR" "$BACKUP_DIR"
+fi
+mv "$EXTRACT_DIR" "$INSTALL_DIR"
+
+if ! (cd "$INSTALL_DIR" && npm ci --omit=dev --silent); then
+  rm -rf "$INSTALL_DIR"
+  if [ -d "$BACKUP_DIR" ]; then
+    mv "$BACKUP_DIR" "$INSTALL_DIR"
+  fi
+  fail "Dependency install failed; rolled back."
+fi
+
+write_wrapper
+
+if ! "$BIN_PATH" --version >/dev/null; then
+  rm -rf "$INSTALL_DIR"
+  if [ -d "$BACKUP_DIR" ]; then
+    mv "$BACKUP_DIR" "$INSTALL_DIR"
+  fi
+  fail "Installed binary failed smoke test; rolled back."
+fi
+
+rm -rf "$BACKUP_DIR"
+
+log "Sentinel ${TAG} installed"
 log "Try: sentinel --version"
 log "Try: sentinel status"

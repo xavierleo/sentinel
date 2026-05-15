@@ -16,33 +16,47 @@ describe('install script', () => {
   it('installs from the local project rather than a placeholder URL', () => {
     const source = readFileSync('scripts/install.sh', 'utf8');
 
-    expect(source).toContain('npm install');
-    expect(source).toContain('npm run build');
-    expect(source).toContain('npm link');
+    expect(source).toContain('npm ci --omit=dev');
+    expect(source).not.toContain('npm run build');
+    expect(source).not.toContain('npm link');
     expect(source).not.toContain('YOUR_USER');
   });
 
-  it('supports the public quick install command', () => {
+  it('supports the public latest-release quick install command', () => {
     const source = readFileSync('scripts/install.sh', 'utf8');
 
-    expect(source).toContain('https://github.com/xavierleo/sentinel.git');
+    expect(source).toContain('https://api.github.com/repos/${REPO}/releases/latest');
     expect(source).toContain('SENTINEL_INSTALL_DIR');
-    expect(source).toContain('SENTINEL_BRANCH');
+    expect(source).toContain('SENTINEL_VERSION');
     expect(source).toContain('raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh');
   });
 
-  it('can bootstrap Sentinel when streamed outside a checkout', () => {
+  it('downloads and verifies the release tarball before installing', () => {
     const source = readFileSync('scripts/install.sh', 'utf8');
 
-    expect(source).toContain('git clone');
-    expect(source).toContain('pull --ff-only');
-    expect(source).toContain('$HOME/.sentinel/sentinel');
-    expect(source).toContain('PROJECT_ROOT=');
+    expect(source).toContain('sentinel-${VERSION}.tar.gz');
+    expect(source).toContain('SHA256_URL');
+    expect(source).toContain('Checksum mismatch');
+    expect(source).toContain('sha256sum');
+    expect(source).toContain('shasum -a 256');
+    expect(source).toContain('Unsafe tarball entry');
   });
 
-  it('keeps installer logs out of command-substituted paths', () => {
+  it('installs a wrapper command and smoke tests it', () => {
     const source = readFileSync('scripts/install.sh', 'utf8');
 
-    expect(source).toContain("printf '[sentinel] %s\\n' \"$1\" >&2");
+    expect(source).toContain('BIN_PATH="/usr/local/bin/sentinel"');
+    expect(source).toContain('exec "\\${NODE_BIN}" "${INSTALL_DIR}/dist/index.js" "\\$@"');
+    expect(source).toContain('sudo tee "$BIN_PATH"');
+    expect(source).toContain('"$BIN_PATH" --version');
+  });
+
+  it('publishes release tarballs and checksums', () => {
+    const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+
+    expect(workflow).toContain('sentinel-${VERSION}.tar.gz');
+    expect(workflow).toContain('sha256sum "release-artifacts/$TARBALL"');
+    expect(workflow).toContain('Smoke test release tarball');
+    expect(workflow).toContain('node smoke/dist/index.js --version');
   });
 });

@@ -18,7 +18,13 @@ Linux, macOS, and WSL2:
 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
 ```
 
-The installer clones or updates Sentinel in `~/.sentinel/sentinel`, installs npm dependencies, runs the test suite, builds the CLI, and links the `sentinel` command.
+The installer downloads the latest GitHub Release, verifies its SHA-256 checksum, installs it to `~/.sentinel`, installs production dependencies, and writes the `sentinel` command to `/usr/local/bin/sentinel`.
+
+To pin a specific version:
+
+```bash
+SENTINEL_VERSION=0.1.1 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
+```
 
 After installation:
 
@@ -30,9 +36,9 @@ sentinel inventory
 
 `sentinel inventory`, `sentinel daemon`, `sentinel chat`, and `sentinel tui` are command stubs until the next runtime-discovery milestone is implemented.
 
-## Manual Linux Install
+## Manual Source Install
 
-Sentinel currently installs as a local Node package from this project directory.
+Sentinel can also be installed as a local Node package from this project directory when developing from source.
 
 Prerequisites:
 
@@ -48,7 +54,10 @@ Clone and install from the project root:
 ```bash
 git clone https://github.com/xavierleo/sentinel.git
 cd sentinel
-./scripts/install.sh
+npm install
+npm test
+npm run build
+npm link
 ```
 
 Then run:
@@ -70,8 +79,8 @@ npm ci -> npm test -> npm run typecheck -> npm run build -> npm pack --dry-run
 Releases are created from version tags:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
-The release workflow builds the package, creates an npm tarball, uploads it as a workflow artifact, and attaches it to a GitHub Release.
+The release workflow builds the package, creates a release tarball plus SHA-256 checksum, smoke tests the tarball, creates an npm tarball, uploads the artifacts, and attaches them to a GitHub Release.

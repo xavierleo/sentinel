@@ -43,16 +43,35 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Package release tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -n "${{ inputs.tag }}" ]; then
+            VERSION="${{ inputs.tag }}"
+            VERSION="${VERSION#v}"
+          fi
+          mkdir -p release-artifacts
+          TARBALL="sentinel-${VERSION}.tar.gz"
+          tar -czf "release-artifacts/$TARBALL" dist scripts/install.sh package.json package-lock.json
+          sha256sum "release-artifacts/$TARBALL" > "release-artifacts/$TARBALL.sha256"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+
+      - name: Smoke test release tarball
+        run: |
+          mkdir smoke
+          tar -xzf "release-artifacts/$TARBALL" -C smoke
+          (cd smoke && npm ci --omit=dev --silent)
+          node smoke/dist/index.js --version >/dev/null
+
       - name: Pack npm tarball
         run: |
-          mkdir -p release-artifacts
           npm pack --pack-destination release-artifacts
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: sentinel-package
-          path: release-artifacts/*.tgz
+          path: release-artifacts/*
           if-no-files-found: error
 
       - name: Create GitHub release
@@ -60,6 +79,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" release-artifacts/*.tgz \
+          gh release create "$RELEASE_TAG" release-artifacts/* \
             --title "$RELEASE_TAG" \
             --generate-notes
