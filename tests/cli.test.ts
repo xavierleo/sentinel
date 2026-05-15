@@ -179,37 +179,45 @@ describe('cli', () => {
   it('prints deterministic inventory chat output for what is running', async () => {
     const harness = createHarness();
     const messages: string[] = [];
+    const inventoryResponse = [
+      'Sentinel runtime inventory',
+      'Containers: 1 running, 0 stopped',
+      '',
+      'Sonarr | running | 8989:8989/tcp',
+    ].join('\n');
 
     const exitCode = await runCli(['chat', '--message', "what's running?"], harness.io, {
       discoverInventory: async () => ({ status: 'ok', profiles: [] }),
       runChat: async (message) => {
         messages.push(message);
-        return 'Sentinel runtime inventory\nContainers: 1 running, 0 stopped\n\nSonarr | running | 8989:8989/tcp';
+        return inventoryResponse;
       },
     });
 
     expect(exitCode).toBe(0);
     expect(messages).toEqual(["what's running?"]);
     expect(harness.stderr).toEqual([]);
-    expect(harness.stdout[0]).toContain('Sentinel runtime inventory');
+    expect(harness.stdout).toEqual([inventoryResponse]);
   });
 
   it('prints deterministic log chat output for recent logs', async () => {
     const harness = createHarness();
     const messages: string[] = [];
+    const logsResponse = 'Recent logs for sonarr\n\n[line one]\n[line two]';
 
     const exitCode = await runCli(['chat', '--message', 'show me recent logs for sonarr'], harness.io, {
       discoverInventory: async () => ({ status: 'ok', profiles: [] }),
       runChat: async (message) => {
         messages.push(message);
-        return 'Recent logs for sonarr\n\n[line one]';
+        return logsResponse;
       },
     });
 
     expect(exitCode).toBe(0);
     expect(messages).toEqual(['show me recent logs for sonarr']);
     expect(harness.stderr).toEqual([]);
-    expect(harness.stdout[0]).toContain('Recent logs for sonarr');
+    expect(harness.stdout).toEqual([logsResponse]);
+    expect(harness.stdout[0]?.split('\n')).toEqual(['Recent logs for sonarr', '', '[line one]', '[line two]']);
   });
 
   it('rejects chat without --message for now', async () => {
