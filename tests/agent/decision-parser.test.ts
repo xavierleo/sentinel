@@ -16,6 +16,26 @@ describe('decision parser', () => {
     expect(decision.tool).toBe('list_containers');
   });
 
+  it('accepts JSON wrapped in a fenced code block', () => {
+    const decision = parseDecision(
+      '```json\n{"thought":"inspect","action":"tool_call","tool":"list_containers","args":{}}\n```',
+    );
+
+    expect(decision.action).toBe('tool_call');
+  });
+
+  it('accepts JSON wrapped in surrounding prose', () => {
+    const decision = parseDecision(
+      'Here is the decision:\n{"thought":"done","action":"respond","response":"Sonarr is running."}\nThanks.',
+    );
+
+    expect(decision).toEqual({
+      thought: 'done',
+      action: 'respond',
+      response: 'Sonarr is running.',
+    });
+  });
+
   it('rejects schedule decisions in v1.x', () => {
     expect(() => parseDecision('{"thought":"later","action":"schedule"}')).toThrow(/Scheduling is not available/);
   });

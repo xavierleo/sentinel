@@ -96,6 +96,34 @@ describe('chat loop', () => {
     expect(callModel).toHaveBeenCalledTimes(2);
   });
 
+  it('accepts fenced JSON model responses without needing repair', async () => {
+    const callModel = vi.fn(async () =>
+      '```json\n{"thought":"inspect containers","action":"tool_call","tool":"list_containers","args":{}}\n```',
+    );
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({ schemaVersion: 1, counts: { total: 0, running: 0, stopped: 0 }, services: [] }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const result = await runChatLoop({
+      message: "what's running?",
+      config: {
+        ...defaultConfig,
+        agent: {
+          ...defaultConfig.agent,
+          max_tool_calls_per_request: 1,
+        },
+      },
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+    });
+
+    expect(result).toContain('tool-call limit');
+    expect(callModel).toHaveBeenCalledOnce();
+  });
+
   it('fails safely when the model exceeds the tool-call limit', async () => {
     const callModel = vi.fn(async () => '{"thought":"keep inspecting","action":"tool_call","tool":"list_containers","args":{}}');
     const registry = createToolRegistry({
