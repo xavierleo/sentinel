@@ -125,6 +125,21 @@ describe('chat loop', () => {
             createdBySentinel: false,
             lastSeenAt: '2026-05-15T15:00:00.000Z',
           },
+          {
+            id: 'bazarr',
+            displayName: 'Bazarr',
+            source: 'runtime_discovery',
+            containerName: 'bazarr',
+            image: 'lscr.io/linuxserver/bazarr:latest',
+            status: 'running',
+            health: 'unknown',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
         ],
       }),
       getContainerLogs: async () => 'unused',
@@ -141,6 +156,57 @@ describe('chat loop', () => {
 
     expect(result).toContain('Unhealthy containers');
     expect(result).toContain('Radarr');
+    expect(result).not.toContain('Bazarr');
+    expect(callModel).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe routed error when container logs cannot be read', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({ schemaVersion: 1, counts: { total: 0, running: 0, stopped: 0 }, services: [] }),
+      getContainerLogs: async () => {
+        throw new Error('docker logs unavailable');
+      },
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    await expect(
+      runChatLoop({
+        message: 'show me recent logs for sonarr',
+        config: defaultConfig,
+        toolRegistry: registry,
+        callModel,
+        hostname: 'cerebro',
+      }),
+    ).resolves.toContain('Unable to read recent logs for sonarr');
+
+    expect(callModel).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe routed error when host status cannot be read', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({ schemaVersion: 1, counts: { total: 0, running: 0, stopped: 0 }, services: [] }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => {
+        throw new Error('host command unavailable');
+      },
+    });
+
+    await expect(
+      runChatLoop({
+        message: 'how is the host doing?',
+        config: defaultConfig,
+        toolRegistry: registry,
+        callModel,
+        hostname: 'cerebro',
+      }),
+    ).resolves.toContain('Unable to read host status');
+
     expect(callModel).not.toHaveBeenCalled();
   });
 

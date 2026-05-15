@@ -83,7 +83,7 @@ function renderInventoryUnhealthy(inventory: InventoryPayload): string {
   const services = (inventory.services ?? []).filter((service) => {
     const status = service.status?.toLowerCase();
     const health = service.health?.toLowerCase();
-    return status !== 'running' || (health !== undefined && health !== 'healthy');
+    return status !== 'running' || health === 'unhealthy';
   });
 
   const lines = ['Unhealthy containers'];
@@ -103,6 +103,11 @@ function renderInventoryUnhealthy(inventory: InventoryPayload): string {
 
 function renderContainerLogs(containerName: string, logs: string): string {
   return [`Recent logs for ${containerName}`, logs].join('\n');
+}
+
+function renderContainerLogsFailure(containerName: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `Unable to read recent logs for ${containerName}: ${message}`;
 }
 
 function renderHostStatus(status: HostStatusPayload): string {
@@ -125,6 +130,11 @@ function renderHostStatus(status: HostStatusPayload): string {
       ? `Docker: server ${docker.serverVersion ?? 'unknown'}, compose ${docker.composeVersion ?? 'unknown'}`
       : 'Docker: unknown',
   ].join('\n');
+}
+
+function renderHostStatusFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `Unable to read host status: ${message}`;
 }
 
 function buildPrompt(
@@ -199,28 +209,50 @@ export async function runChatLoop(options: ChatLoopOptions): Promise<string> {
 
   if (route.kind === 'container_logs') {
     emitTrace(onTrace, { type: 'tool_call', tool: 'container_logs', args: { name: route.containerName } });
-    const logs = await toolRegistry.get('container_logs')?.run({ name: route.containerName });
-    const renderedLogs = renderContainerLogs(route.containerName, typeof logs === 'string' ? logs : '');
-    emitTrace(onTrace, {
-      type: 'tool_result',
-      tool: 'container_logs',
-      preview: renderedLogs,
-    });
-    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
-    return renderedLogs;
+    try {
+      const logs = await toolRegistry.get('container_logs')?.run({ name: route.containerName });
+      const renderedLogs = renderContainerLogs(route.containerName, typeof logs === 'string' ? logs : '');
+      emitTrace(onTrace, {
+        type: 'tool_result',
+        tool: 'container_logs',
+        preview: renderedLogs,
+      });
+      emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+      return renderedLogs;
+    } catch (error) {
+      const renderedError = renderContainerLogsFailure(route.containerName, error);
+      emitTrace(onTrace, {
+        type: 'tool_result',
+        tool: 'container_logs',
+        preview: renderedError,
+      });
+      emitTrace(onTrace, { type: 'outcome', outcome: 'safe_failure' });
+      return renderedError;
+    }
   }
 
   if (route.kind === 'host_summary') {
     emitTrace(onTrace, { type: 'tool_call', tool: 'host_status', args: {} });
-    const hostStatus = (await toolRegistry.get('host_status')?.run({})) as HostStatusPayload | undefined;
-    const renderedHostStatus = renderHostStatus(hostStatus ?? {});
-    emitTrace(onTrace, {
-      type: 'tool_result',
-      tool: 'host_status',
-      preview: renderedHostStatus,
-    });
-    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
-    return renderedHostStatus;
+    try {
+      const hostStatus = (await toolRegistry.get('host_status')?.run({})) as HostStatusPayload | undefined;
+      const renderedHostStatus = renderHostStatus(hostStatus ?? {});
+      emitTrace(onTrace, {
+        type: 'tool_result',
+        tool: 'host_status',
+        preview: renderedHostStatus,
+      });
+      emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+      return renderedHostStatus;
+    } catch (error) {
+      const renderedError = renderHostStatusFailure(error);
+      emitTrace(onTrace, {
+        type: 'tool_result',
+        tool: 'host_status',
+        preview: renderedError,
+      });
+      emitTrace(onTrace, { type: 'outcome', outcome: 'safe_failure' });
+      return renderedError;
+    }
   }
 
   for (let toolCalls = 0; toolCalls < config.agent.max_tool_calls_per_request; ) {
