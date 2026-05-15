@@ -55,13 +55,157 @@ describe('chat loop', () => {
     );
   });
 
+  it('sorts inventory summary output with running containers before stopped ones', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({
+        schemaVersion: 1,
+        counts: { total: 3, running: 2, stopped: 1 },
+        services: [
+          {
+            id: 'uptime-kuma',
+            displayName: 'Uptime Kuma',
+            source: 'runtime_discovery',
+            containerName: 'uptime-kuma',
+            image: 'louislam/uptime-kuma:1',
+            status: 'exited',
+            health: 'unhealthy',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+          {
+            id: 'sonarr',
+            displayName: 'Sonarr',
+            source: 'runtime_discovery',
+            containerName: 'sonarr',
+            image: 'lscr.io/linuxserver/sonarr:latest',
+            status: 'running',
+            health: 'healthy',
+            ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+          {
+            id: 'radarr',
+            displayName: 'Radarr',
+            source: 'runtime_discovery',
+            containerName: 'radarr',
+            image: 'lscr.io/linuxserver/radarr:latest',
+            status: 'running',
+            health: 'unknown',
+            ports: [{ host: 7878, container: 7878, protocol: 'tcp' }],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+        ],
+      }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const result = await runChatLoop({
+      message: "what's running?",
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+    });
+
+    const sonarrIndex = result.indexOf('Sonarr | running');
+    const radarrIndex = result.indexOf('Radarr | running');
+    const uptimeIndex = result.indexOf('Uptime Kuma | exited');
+
+    expect(sonarrIndex).toBeGreaterThan(-1);
+    expect(radarrIndex).toBeGreaterThan(-1);
+    expect(uptimeIndex).toBeGreaterThan(radarrIndex);
+    expect(uptimeIndex).toBeGreaterThan(sonarrIndex);
+  });
+
+  it('answers detailed inventory questions with richer service details without calling the model', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({
+        schemaVersion: 1,
+        counts: { total: 2, running: 1, stopped: 1 },
+        services: [
+          {
+            id: 'uptime-kuma',
+            displayName: 'Uptime Kuma',
+            source: 'runtime_discovery',
+            containerName: 'uptime-kuma',
+            image: 'louislam/uptime-kuma:1',
+            status: 'exited',
+            health: 'unhealthy',
+            composeProject: 'uptimekuma',
+            composeService: 'uptime-kuma',
+            stackDir: '/opt/stacks/uptimekuma',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+          {
+            id: 'sonarr',
+            displayName: 'Sonarr',
+            source: 'runtime_discovery',
+            containerName: 'sonarr',
+            image: 'lscr.io/linuxserver/sonarr:latest',
+            status: 'running',
+            health: 'healthy',
+            composeProject: 'sonarr',
+            composeService: 'sonarr',
+            stackDir: '/opt/stacks/sonarr',
+            ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+        ],
+      }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const result = await runChatLoop({
+      message: "what's running in more detail?",
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+    });
+
+    expect(result).toContain('Detailed runtime inventory');
+    expect(result).toContain('health=healthy');
+    expect(result).toContain('compose=sonarr/sonarr');
+    expect(result).toContain('stack=/opt/stacks/sonarr');
+    expect(callModel).not.toHaveBeenCalled();
+  });
+
   it('answers recent log questions without calling the model', async () => {
     const callModel = vi.fn(async () => {
       throw new Error('model should not be called');
     });
     const registry = createToolRegistry({
       getRuntimeInventory: async () => ({ schemaVersion: 1, counts: { total: 0, running: 0, stopped: 0 }, services: [] }),
-      getContainerLogs: async () => 'line one\nline two',
+      getContainerLogs: async (_name, lines) => `line count=${lines ?? 'missing'}\nline two`,
       getHostStatus: async () => ({ hostname: 'cerebro' }),
     });
 
@@ -76,7 +220,7 @@ describe('chat loop', () => {
     });
 
     expect(result).toContain('Recent logs for sonarr');
-    expect(result).toContain('line one');
+    expect(result).toContain(`line count=${defaultConfig.agent.max_log_lines_default}`);
     expect(callModel).not.toHaveBeenCalled();
     expect(trace).toEqual(
       expect.arrayContaining([
@@ -157,6 +301,81 @@ describe('chat loop', () => {
     expect(result).toContain('Unhealthy containers');
     expect(result).toContain('Radarr');
     expect(result).not.toContain('Bazarr');
+    expect(callModel).not.toHaveBeenCalled();
+  });
+
+  it('answers stopped-container questions without calling the model', async () => {
+    const callModel = vi.fn(async () => {
+      throw new Error('model should not be called');
+    });
+    const registry = createToolRegistry({
+      getRuntimeInventory: async () => ({
+        schemaVersion: 1,
+        counts: { total: 3, running: 1, stopped: 2 },
+        services: [
+          {
+            id: 'sonarr',
+            displayName: 'Sonarr',
+            source: 'runtime_discovery',
+            containerName: 'sonarr',
+            image: 'lscr.io/linuxserver/sonarr:latest',
+            status: 'running',
+            health: 'healthy',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+          {
+            id: 'radarr',
+            displayName: 'Radarr',
+            source: 'runtime_discovery',
+            containerName: 'radarr',
+            image: 'lscr.io/linuxserver/radarr:latest',
+            status: 'exited',
+            health: 'unhealthy',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+          {
+            id: 'uptime-kuma',
+            displayName: 'Uptime Kuma',
+            source: 'runtime_discovery',
+            containerName: 'uptime-kuma',
+            image: 'louislam/uptime-kuma:1',
+            status: 'exited',
+            health: 'unknown',
+            ports: [],
+            mounts: [],
+            networks: [],
+            restartPolicy: 'unless-stopped',
+            createdBySentinel: false,
+            lastSeenAt: '2026-05-15T15:00:00.000Z',
+          },
+        ],
+      }),
+      getContainerLogs: async () => 'unused',
+      getHostStatus: async () => ({ hostname: 'cerebro' }),
+    });
+
+    const result = await runChatLoop({
+      message: 'what stopped?',
+      config: defaultConfig,
+      toolRegistry: registry,
+      callModel,
+      hostname: 'cerebro',
+    });
+
+    expect(result).toContain('Stopped containers');
+    expect(result).toContain('Radarr');
+    expect(result).toContain('Uptime Kuma');
+    expect(result).not.toContain('Sonarr');
     expect(callModel).not.toHaveBeenCalled();
   });
 
@@ -374,7 +593,7 @@ describe('chat loop', () => {
 
     const trace: unknown[] = [];
     const result = await runChatLoop({
-      message: "what's running in more detail?",
+      message: "what's running with more context?",
       config: {
         ...defaultConfig,
         agent: {

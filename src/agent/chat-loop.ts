@@ -26,6 +26,9 @@ type InventoryPayload = {
     containerName?: string;
     status?: string;
     health?: string;
+    composeProject?: string;
+    composeService?: string;
+    stackDir?: string;
     ports?: Array<{ host: number; container: number; protocol: string }>;
   }>;
 };
@@ -54,9 +57,25 @@ function formatPorts(ports: Array<{ host: number; container: number; protocol: s
   return ports.map((port) => `${port.host}:${port.container}/${port.protocol}`).join(', ');
 }
 
+function sortServices(
+  services: NonNullable<InventoryPayload['services']>,
+): NonNullable<InventoryPayload['services']> {
+  return services.slice().sort((left, right) => {
+    const leftRunning = left.status === 'running' ? 0 : 1;
+    const rightRunning = right.status === 'running' ? 0 : 1;
+    if (leftRunning !== rightRunning) {
+      return leftRunning - rightRunning;
+    }
+
+    const leftName = left.displayName ?? left.containerName ?? '';
+    const rightName = right.displayName ?? right.containerName ?? '';
+    return leftName.localeCompare(rightName);
+  });
+}
+
 function renderInventorySummary(inventory: InventoryPayload): string {
   const counts = inventory.counts ?? {};
-  const services = inventory.services ?? [];
+  const services = sortServices(inventory.services ?? []);
   const lines = [
     'Sentinel runtime inventory',
     `Containers: ${counts.running ?? 0} running, ${counts.stopped ?? 0} stopped`,
@@ -72,14 +91,60 @@ function renderInventorySummary(inventory: InventoryPayload): string {
   return lines.join('\n');
 }
 
+function renderInventoryDetailed(inventory: InventoryPayload): string {
+  const counts = inventory.counts ?? {};
+  const services = sortServices(inventory.services ?? []);
+  const lines = [
+    'Detailed runtime inventory',
+    `Containers: ${counts.running ?? 0} running, ${counts.stopped ?? 0} stopped`,
+    '',
+  ];
+
+  for (const service of services) {
+    const details = [
+      `${service.displayName ?? service.containerName ?? 'Unknown'} | ${service.status ?? 'unknown'} | health=${service.health ?? 'unknown'} | ports=${formatPorts(service.ports)}`,
+    ];
+
+    if (service.composeProject) {
+      details.push(`compose=${service.composeProject}/${service.composeService ?? '-'}`);
+    }
+
+    if (service.stackDir) {
+      details.push(`stack=${service.stackDir}`);
+    }
+
+    lines.push(details.join(' | '));
+  }
+
+  return lines.join('\n');
+}
+
 function renderInventoryUnhealthy(inventory: InventoryPayload): string {
-  const services = (inventory.services ?? []).filter((service) => {
+  const services = sortServices((inventory.services ?? []).filter((service) => {
     const status = service.status?.toLowerCase();
     const health = service.health?.toLowerCase();
     return status !== 'running' || health === 'unhealthy';
-  });
+  }));
 
   const lines = ['Unhealthy containers'];
+  if (services.length === 0) {
+    lines.push('None');
+    return lines.join('\n');
+  }
+
+  for (const service of services) {
+    lines.push(
+      `- ${service.displayName ?? service.containerName ?? 'Unknown'} | status: ${service.status ?? 'unknown'} | health: ${service.health ?? 'unknown'}`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function renderInventoryStopped(inventory: InventoryPayload): string {
+  const services = sortServices((inventory.services ?? []).filter((service) => service.status !== 'running'));
+  const lines = ['Stopped containers'];
+
   if (services.length === 0) {
     lines.push('None');
     return lines.join('\n');
@@ -141,7 +206,11 @@ function truncateToolResult(value: unknown, maxChars: number): string {
 function getDegradedRoute(message: string): { kind: 'inventory_summary' } | undefined {
   const normalized = message.trim().toLowerCase().replace(/\s+/g, ' ');
 
-  if (normalized.includes('running') && normalized.includes('detail') && !normalized.includes('restart')) {
+  if (
+    normalized.includes('running') &&
+    (normalized.includes('detail') || normalized.includes('context') || normalized.includes('more info')) &&
+    !normalized.includes('restart')
+  ) {
     return { kind: 'inventory_summary' };
   }
 
@@ -163,15 +232,32 @@ export async function runChatLoop(options: ChatLoopOptions): Promise<string> {
     return renderInventorySummary((inventorySummary ?? {}) as InventoryPayload);
   }
 
+  if (route.kind === 'inventory_detailed') {
+    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+    return renderInventoryDetailed((inventorySummary ?? {}) as InventoryPayload);
+  }
+
   if (route.kind === 'inventory_unhealthy') {
     emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
     return renderInventoryUnhealthy((inventorySummary ?? {}) as InventoryPayload);
   }
 
+  if (route.kind === 'inventory_stopped') {
+    emitTrace(onTrace, { type: 'outcome', outcome: 'routed_response' });
+    return renderInventoryStopped((inventorySummary ?? {}) as InventoryPayload);
+  }
+
   if (route.kind === 'container_logs') {
-    emitTrace(onTrace, { type: 'tool_call', tool: 'container_logs', args: { name: route.containerName } });
+    emitTrace(onTrace, {
+      type: 'tool_call',
+      tool: 'container_logs',
+      args: { name: route.containerName, lines: config.agent.max_log_lines_default },
+    });
     try {
-      const logs = await toolRegistry.get('container_logs')?.run({ name: route.containerName });
+      const logs = await toolRegistry.get('container_logs')?.run({
+        name: route.containerName,
+        lines: config.agent.max_log_lines_default,
+      });
       const renderedLogs = renderContainerLogs(route.containerName, typeof logs === 'string' ? logs : '');
       emitTrace(onTrace, {
         type: 'tool_result',

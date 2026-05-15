@@ -6,8 +6,16 @@ describe('intent router', () => {
     expect(classifyIntent("what's running?")).toEqual({ kind: 'inventory_summary' });
   });
 
+  it('classifies detailed running questions separately', () => {
+    expect(classifyIntent("what's running in more detail?")).toEqual({ kind: 'inventory_detailed' });
+  });
+
   it('classifies "what is unhealthy right now?" as inventory unhealthy', () => {
     expect(classifyIntent('what is unhealthy right now?')).toEqual({ kind: 'inventory_unhealthy' });
+  });
+
+  it('classifies stopped-container questions separately', () => {
+    expect(classifyIntent('what stopped?')).toEqual({ kind: 'inventory_stopped' });
   });
 
   it('classifies recent log requests with a container name', () => {
