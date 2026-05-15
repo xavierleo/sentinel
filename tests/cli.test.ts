@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
+import type { RuntimeInventoryResult } from '../src/discovery/docker-discovery.js';
 
 function createHarness() {
   const stdout: string[] = [];
@@ -45,13 +46,54 @@ describe('cli', () => {
     expect(harness.stdout.join('\n')).toContain('Daemon: not implemented yet');
   });
 
-  it('keeps inventory honest until Docker discovery is wired', async () => {
+  it('prints Docker inventory when discovery succeeds', async () => {
     const harness = createHarness();
 
-    const exitCode = await runCli(['inventory'], harness.io);
+    const inventory: RuntimeInventoryResult = {
+      status: 'ok',
+      profiles: [
+        {
+          id: 'sonarr',
+          displayName: 'Sonarr',
+          source: 'runtime_discovery',
+          containerName: 'sonarr',
+          image: 'lscr.io/linuxserver/sonarr:latest',
+          status: 'running',
+          health: 'healthy',
+          composeProject: 'media',
+          composeService: 'sonarr',
+          stackDir: '/opt/stacks/media',
+          ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
+          mounts: [],
+          networks: ['media'],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          lastSeenAt: '2026-05-15T10:00:00.000Z',
+        },
+      ],
+    };
+
+    const exitCode = await runCli(['inventory'], harness.io, {
+      discoverInventory: async () => inventory,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stderr).toEqual([]);
+    expect(harness.stdout.join('\n')).toContain('Sentinel runtime inventory');
+    expect(harness.stdout.join('\n')).toContain('Containers: 1 running, 0 stopped');
+    expect(harness.stdout.join('\n')).toContain('sonarr');
+    expect(harness.stdout.join('\n')).toContain('8989:8989/tcp');
+  });
+
+  it('prints a clear inventory error when Docker is missing', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['inventory'], harness.io, {
+      discoverInventory: async () => ({ status: 'docker_unavailable', message: 'Docker is not installed.' }),
+    });
 
     expect(exitCode).toBe(2);
-    expect(harness.stderr.join('\n')).toContain('Docker discovery is not implemented yet');
+    expect(harness.stderr.join('\n')).toContain('Docker is not installed');
   });
 
   it('rejects unknown commands', async () => {

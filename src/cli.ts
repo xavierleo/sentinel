@@ -1,8 +1,14 @@
 import { getVersionLabel } from './index.js';
+import { discoverDockerInventory, type RuntimeInventoryResult } from './discovery/docker-discovery.js';
+import type { RuntimeServiceProfile } from './discovery/runtime-profile.js';
 
 export interface CliIo {
   stdout: (message: string) => void;
   stderr: (message: string) => void;
+}
+
+export interface CliDependencies {
+  discoverInventory: () => Promise<RuntimeInventoryResult>;
 }
 
 const usage = `Usage: sentinel <command>
@@ -21,12 +27,48 @@ const defaultIo: CliIo = {
   stderr: (message: string) => console.error(message),
 };
 
+const defaultDeps: CliDependencies = {
+  discoverInventory: () => discoverDockerInventory(),
+};
+
 function printNotImplemented(command: string, io: CliIo): number {
   io.stderr(`${command} is not implemented yet in Sentinel v1.0 foundation.`);
   return 2;
 }
 
-export async function runCli(argv: string[], io: CliIo = defaultIo): Promise<number> {
+function formatPorts(profile: RuntimeServiceProfile): string {
+  if (profile.ports.length === 0) {
+    return '-';
+  }
+
+  return profile.ports.map((port) => `${port.host}:${port.container}/${port.protocol}`).join(', ');
+}
+
+function formatInventory(profiles: RuntimeServiceProfile[]): string {
+  const running = profiles.filter((profile) => profile.status === 'running').length;
+  const stopped = profiles.length - running;
+  const rows = profiles
+    .slice()
+    .sort((a, b) => a.containerName.localeCompare(b.containerName))
+    .map((profile) => {
+      const compose = profile.composeProject ? ` compose=${profile.composeProject}/${profile.composeService ?? '-'}` : '';
+      return `${profile.containerName}  ${profile.status}  ${profile.image}  ${formatPorts(profile)}${compose}`;
+    });
+
+  return [
+    'Sentinel runtime inventory',
+    `Containers: ${running} running, ${stopped} stopped`,
+    '',
+    'NAME  STATUS  IMAGE  PORTS',
+    ...rows,
+  ].join('\n');
+}
+
+export async function runCli(
+  argv: string[],
+  io: CliIo = defaultIo,
+  deps: CliDependencies = defaultDeps,
+): Promise<number> {
   const [command] = argv;
 
   switch (command) {
@@ -50,8 +92,17 @@ TUI: not implemented yet`);
       return 0;
 
     case 'inventory':
-      io.stderr('Docker discovery is not implemented yet. Runtime inventory will be wired in the next milestone.');
-      return 2;
+      {
+        const result = await deps.discoverInventory();
+
+        if (result.status !== 'ok') {
+          io.stderr(result.message);
+          return 2;
+        }
+
+        io.stdout(formatInventory(result.profiles));
+        return 0;
+      }
 
     case 'daemon':
     case 'chat':
