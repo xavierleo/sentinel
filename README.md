@@ -40,3 +40,20 @@ sentinel inventory
 ```
 
 `sentinel inventory`, `sentinel daemon`, `sentinel chat`, and `sentinel tui` are command stubs until the next runtime-discovery milestone is implemented.
+
+## CI And Releases
+
+GitHub Actions runs CI on pushes and pull requests to `main`:
+
+```text
+npm ci -> npm test -> npm run typecheck -> npm run build -> npm pack --dry-run
+```
+
+Releases are created from version tags:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow builds the package, creates an npm tarball, uploads it as a workflow artifact, and attaches it to a GitHub Release.
