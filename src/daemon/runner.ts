@@ -10,6 +10,7 @@ export interface DaemonRunnerDependencies {
 
 export function createDaemonRunner(deps: DaemonRunnerDependencies) {
   let stopped = false;
+  let wake: (() => void) | undefined;
 
   return {
     async run(): Promise<void> {
@@ -25,11 +26,18 @@ export function createDaemonRunner(deps: DaemonRunnerDependencies) {
           return;
         }
 
-        await deps.sleep(deps.refreshIntervalMs);
+        await Promise.race([
+          deps.sleep(deps.refreshIntervalMs),
+          new Promise<void>((resolve) => {
+            wake = resolve;
+          }),
+        ]);
+        wake = undefined;
       }
     },
     stop(): void {
       stopped = true;
+      wake?.();
     },
   };
 }

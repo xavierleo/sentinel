@@ -24,6 +24,14 @@ export interface CliDependencies {
   runDaemon: () => Promise<void>;
 }
 
+function getFirstSeenAt(profile: RuntimeServiceProfile): string {
+  if ('firstSeenAt' in profile && typeof profile.firstSeenAt === 'string') {
+    return profile.firstSeenAt;
+  }
+
+  return profile.lastSeenAt;
+}
+
 const usage = `Usage: sentinel <command>
 
 Commands:
@@ -83,7 +91,7 @@ const defaultDeps: CliDependencies = {
             composeService: profile.composeService ?? null,
             stackDir: profile.stackDir ?? null,
             createdBySentinel: profile.createdBySentinel,
-            firstSeenAt: profile.lastSeenAt,
+            firstSeenAt: getFirstSeenAt(profile),
             lastSeenAt: profile.lastSeenAt,
             ports: profile.ports,
             mounts: profile.mounts,
@@ -245,8 +253,13 @@ TUI: not implemented yet`);
       }
 
     case 'daemon':
-      await resolvedDeps.runDaemon();
-      return 0;
+      try {
+        await resolvedDeps.runDaemon();
+        return 0;
+      } catch (error) {
+        io.stderr(error instanceof Error ? error.message : String(error));
+        return 2;
+      }
 
     case 'tui':
       return printNotImplemented(command, io);

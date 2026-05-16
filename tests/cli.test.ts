@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 import type { RuntimeInventoryResult } from '../src/discovery/docker-discovery.js';
+import type { RuntimeServiceProfile } from '../src/discovery/runtime-profile.js';
 
 function createHarness() {
   const stdout: string[] = [];
@@ -60,6 +61,20 @@ describe('cli', () => {
     expect(runDaemonCalls).toBe(1);
     expect(harness.stdout).toEqual([]);
     expect(harness.stderr).toEqual([]);
+  });
+
+  it('prints a clean daemon error and exits 2 when startup fails', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['daemon'], harness.io, {
+      runDaemon: async () => {
+        throw new Error('database is locked');
+      },
+    });
+
+    expect(exitCode).toBe(2);
+    expect(harness.stdout).toEqual([]);
+    expect(harness.stderr).toEqual(['database is locked']);
   });
 
   it('prints Docker inventory when discovery succeeds', async () => {
@@ -157,6 +172,101 @@ describe('cli', () => {
       },
       services: inventory.profiles,
     });
+  });
+
+  it('preserves firstSeenAt separately from lastSeenAt in daemon inventory mapping', async () => {
+    const harness = createHarness();
+    const writtenServices: Array<{ firstSeenAt: string; lastSeenAt: string }> = [];
+    const inventory: RuntimeInventoryResult = {
+      status: 'ok',
+      profiles: [
+        {
+          id: 'sonarr',
+          displayName: 'Sonarr',
+          source: 'runtime_discovery',
+          containerName: 'sonarr',
+          image: 'lscr.io/linuxserver/sonarr:latest',
+          status: 'running',
+          health: 'healthy',
+          ports: [],
+          mounts: [],
+          networks: [],
+          restartPolicy: 'unless-stopped',
+          createdBySentinel: false,
+          firstSeenAt: '2026-05-01T10:00:00.000Z',
+          lastSeenAt: '2026-05-15T10:00:00.000Z',
+        },
+      ],
+    } as RuntimeInventoryResult & {
+      profiles: Array<RuntimeServiceProfile & { firstSeenAt: string }>;
+    };
+
+    vi.resetModules();
+    vi.doMock('../src/config/defaults.js', () => ({
+      defaultConfig: {
+        storage: { sqlite_path: ':memory:' },
+        runtime_inventory: { refresh_interval: '5m' },
+      },
+    }));
+    vi.doMock('../src/discovery/docker-discovery.js', () => ({
+      discoverDockerInventory: async () => inventory,
+    }));
+    vi.doMock('../src/storage/sqlite.js', () => ({
+      createStateDatabase: () => ({ close: () => {} }),
+    }));
+    vi.doMock('../src/storage/runtime-snapshots-repository.js', () => ({
+      createRuntimeSnapshotsRepository: () => ({}),
+    }));
+    vi.doMock('../src/tools/host.js', () => ({
+      createHostStatusTool: () => async () => ({
+        hostname: 'sentinel',
+        platform: { kernel: 'Linux' },
+        uptime: '1 day',
+        memory: { totalMb: 1, usedMb: 1, freeMb: 0, availableMb: 0 },
+        rootDisk: {
+          filesystem: '/',
+          size: '1G',
+          used: '1G',
+          available: '0G',
+          percentUsed: '100%',
+          mountpoint: '/',
+        },
+        docker: { serverVersion: '27.0.0', composeVersion: '2.0.0' },
+      }),
+    }));
+    vi.doMock('../src/daemon/refresh-service.js', () => ({
+      createRefreshService: ({ collectRuntimeInventory }: { collectRuntimeInventory: () => Promise<{ services: Array<{ firstSeenAt: string; lastSeenAt: string }> }> }) => ({
+        refreshOnce: async () => {
+          writtenServices.push(...(await collectRuntimeInventory()).services);
+          return 1;
+        },
+      }),
+    }));
+    vi.doMock('../src/daemon/runner.js', () => ({
+      createDaemonRunner: ({ refreshOnce }: { refreshOnce: () => Promise<number> }) => ({
+        run: async () => {
+          await refreshOnce();
+        },
+        stop: () => {},
+      }),
+    }));
+
+    const { runCli: runCliWithMocks } = await import('../src/cli.js');
+    const exitCode = await runCliWithMocks(['daemon'], harness.io);
+
+    expect(exitCode).toBe(0);
+    expect(writtenServices).toHaveLength(1);
+    expect(writtenServices[0]).toMatchObject({
+      firstSeenAt: '2026-05-01T10:00:00.000Z',
+      lastSeenAt: '2026-05-15T10:00:00.000Z',
+    });
+    vi.doUnmock('../src/config/defaults.js');
+    vi.doUnmock('../src/discovery/docker-discovery.js');
+    vi.doUnmock('../src/storage/sqlite.js');
+    vi.doUnmock('../src/storage/runtime-snapshots-repository.js');
+    vi.doUnmock('../src/tools/host.js');
+    vi.doUnmock('../src/daemon/refresh-service.js');
+    vi.doUnmock('../src/daemon/runner.js');
   });
 
   it('rejects unsupported inventory flags', async () => {
