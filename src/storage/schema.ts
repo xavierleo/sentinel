@@ -5,8 +5,8 @@ const storageSchemaStatements = [
     id integer primary key,
     created_at text not null default (current_timestamp),
     hostname text,
-    docker_server_version text,
-    docker_compose_version text,
+    docker_version text,
+    compose_version text,
     raw_summary_json text not null,
     raw_host_status_json text not null
   )`,
@@ -37,6 +37,7 @@ const storageSchemaStatements = [
     created_by_sentinel integer not null default 0,
     first_seen_at text not null,
     last_seen_at text not null,
+    last_snapshot_id integer,
     foreign key (snapshot_id) references runtime_inventory_snapshots(id) on delete cascade
   )`,
   `create table if not exists runtime_service_ports (
