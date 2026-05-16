@@ -32,6 +32,7 @@ function mapCollectedService(service: CollectedRuntimeService): PersistedSnapsho
     createdBySentinel: service.createdBySentinel,
     firstSeenAt: service.firstSeenAt,
     lastSeenAt: service.lastSeenAt,
+    restartPolicy: service.restartPolicy,
     ports: service.ports,
     mounts: service.mounts,
     networks: service.networks,

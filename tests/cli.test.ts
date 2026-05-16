@@ -42,6 +42,7 @@ function createSnapshot(overrides: Partial<PersistedSnapshotRead> = {}): Persist
         createdBySentinel: false,
         firstSeenAt: '2026-05-01T10:00:00.000Z',
         lastSeenAt: '2026-05-15T10:00:00.000Z',
+        restartPolicy: 'unless-stopped',
         ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
         mounts: [],
         networks: ['media'],
@@ -110,6 +111,20 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(harness.stdout.join('\n')).toContain('Snapshots: available');
     expect(harness.stdout.join('\n')).toContain('Latest snapshot: 2026-05-15T10:00:00.000Z');
+  });
+
+  it('prints a clean status error and exits 2 when snapshot state cannot be read', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['status'], harness.io, {
+      readLatestSnapshot: () => {
+        throw new Error('permission denied opening sqlite state');
+      },
+    });
+
+    expect(exitCode).toBe(2);
+    expect(harness.stdout).toEqual([]);
+    expect(harness.stderr).toEqual(['permission denied opening sqlite state']);
   });
 
   it('runs the daemon command through an injected dependency', async () => {
@@ -237,6 +252,7 @@ describe('cli', () => {
           createdBySentinel: false,
           firstSeenAt: '2026-05-10T10:00:00.000Z',
           lastSeenAt: '2026-05-15T10:00:00.000Z',
+          restartPolicy: 'on-failure',
           ports: [],
           mounts: [],
           networks: [],
@@ -277,7 +293,7 @@ describe('cli', () => {
           ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
           mounts: [],
           networks: ['media'],
-          restartPolicy: 'unknown',
+          restartPolicy: 'unless-stopped',
           createdBySentinel: false,
           lastSeenAt: '2026-05-15T10:00:00.000Z',
         },
@@ -292,7 +308,7 @@ describe('cli', () => {
           ports: [],
           mounts: [],
           networks: [],
-          restartPolicy: 'unknown',
+          restartPolicy: 'on-failure',
           createdBySentinel: false,
           lastSeenAt: '2026-05-15T10:00:00.000Z',
         },
@@ -315,6 +331,23 @@ describe('cli', () => {
     expect(harness.stderr).toEqual([
       'No stored runtime snapshot is available yet. Start `sentinel daemon` and wait for the first refresh.',
     ]);
+  });
+
+  it('prints a clean inventory error and exits 2 when stored snapshot state cannot be read', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['inventory', '--json'], harness.io, {
+      discoverInventory: async () => {
+        throw new Error('should not rediscover');
+      },
+      readLatestSnapshot: () => {
+        throw new Error('database is locked');
+      },
+    });
+
+    expect(exitCode).toBe(2);
+    expect(harness.stdout).toEqual([]);
+    expect(harness.stderr).toEqual(['database is locked']);
   });
 
   it('preserves firstSeenAt separately from lastSeenAt in daemon inventory mapping', async () => {

@@ -46,6 +46,7 @@ interface RuntimeServiceRow {
   created_by_sentinel: number;
   first_seen_at: string;
   last_seen_at: string;
+  restart_policy: string;
   last_snapshot_id: number | null;
 }
 
@@ -107,6 +108,7 @@ function readServices(
         created_by_sentinel,
         first_seen_at,
         last_seen_at,
+        restart_policy,
         last_snapshot_id
        from runtime_services
        where snapshot_id = ?
@@ -147,6 +149,7 @@ function readServices(
     createdBySentinel: row.created_by_sentinel === 1,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
+    restartPolicy: row.restart_policy,
     ports: (readPorts.all(row.id) as RuntimeServicePortRow[]).map((port) => ({
       host: port.host_port,
       container: port.container_port,
@@ -261,8 +264,9 @@ export function createRuntimeSnapshotsRepository(db: SqliteDatabase) {
         created_by_sentinel,
         first_seen_at,
         last_seen_at,
+        restart_policy,
         last_snapshot_id
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertPort = db.prepare(
@@ -304,6 +308,7 @@ export function createRuntimeSnapshotsRepository(db: SqliteDatabase) {
         service.createdBySentinel ? 1 : 0,
         service.firstSeenAt,
         service.lastSeenAt,
+        service.restartPolicy,
         snapshotId,
       );
 

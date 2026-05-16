@@ -103,6 +103,7 @@ const defaultDeps: CliDependencies = {
             createdBySentinel: profile.createdBySentinel,
             firstSeenAt: getFirstSeenAt(profile),
             lastSeenAt: profile.lastSeenAt,
+            restartPolicy: profile.restartPolicy,
             ports: profile.ports,
             mounts: profile.mounts,
             networks: profile.networks,
@@ -191,9 +192,9 @@ function toRuntimeServiceProfile(service: PersistedRuntimeService): RuntimeServi
     ports: service.ports.map((port) => ({ ...port })),
     mounts: service.mounts.map((mount) => ({ ...mount })),
     networks: [...service.networks],
-    restartPolicy: 'unknown',
     createdBySentinel: false,
     lastSeenAt: service.lastSeenAt,
+    restartPolicy: service.restartPolicy,
   };
 }
 
@@ -260,7 +261,15 @@ export async function runCli(
 
     case 'status':
       {
-        const snapshot = resolvedDeps.readLatestSnapshot();
+        let snapshot: PersistedSnapshotRead | undefined;
+
+        try {
+          snapshot = resolvedDeps.readLatestSnapshot();
+        } catch (error) {
+          io.stderr(error instanceof Error ? error.message : String(error));
+          return 2;
+        }
+
         const snapshotLines = snapshot
           ? [`Snapshots: available`, `Latest snapshot: ${snapshot.createdAt}`]
           : [`Snapshots: none`, 'Latest snapshot: never'];
@@ -283,7 +292,15 @@ ${snapshotLines.join('\n')}`);
           return 1;
         }
 
-        const snapshot = resolvedDeps.readLatestSnapshot();
+        let snapshot: PersistedSnapshotRead | undefined;
+
+        try {
+          snapshot = resolvedDeps.readLatestSnapshot();
+        } catch (error) {
+          io.stderr(error instanceof Error ? error.message : String(error));
+          return 2;
+        }
+
         if (!snapshot) {
           io.stderr('No stored runtime snapshot is available yet. Start `sentinel daemon` and wait for the first refresh.');
           return 2;

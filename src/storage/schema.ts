@@ -37,6 +37,7 @@ const storageSchemaStatements = [
     created_by_sentinel integer not null default 0,
     first_seen_at text not null,
     last_seen_at text not null,
+    restart_policy text not null default 'unknown',
     last_snapshot_id integer,
     foreign key (snapshot_id) references runtime_inventory_snapshots(id) on delete cascade,
     foreign key (last_snapshot_id) references runtime_inventory_snapshots(id) on delete set null
@@ -65,10 +66,19 @@ const storageSchemaStatements = [
   )`,
 ] as const;
 
+function hasColumn(db: InstanceType<typeof Database>, tableName: string, columnName: string): boolean {
+  const columns = db.prepare(`pragma table_info('${tableName}')`).all() as Array<{ name: string }>;
+  return columns.some((column) => column.name === columnName);
+}
+
 export function applyStorageSchema(db: InstanceType<typeof Database>) {
   db.pragma('foreign_keys = on');
 
   for (const statement of storageSchemaStatements) {
     db.exec(statement);
+  }
+
+  if (!hasColumn(db, 'runtime_services', 'restart_policy')) {
+    db.exec("alter table runtime_services add column restart_policy text not null default 'unknown'");
   }
 }

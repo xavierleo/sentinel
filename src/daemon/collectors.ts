@@ -26,6 +26,7 @@ export interface CollectedRuntimeService {
   createdBySentinel: boolean;
   firstSeenAt: string;
   lastSeenAt: string;
+  restartPolicy: string;
   ports: CollectedRuntimeServicePort[];
   mounts: CollectedRuntimeServiceMount[];
   networks: string[];

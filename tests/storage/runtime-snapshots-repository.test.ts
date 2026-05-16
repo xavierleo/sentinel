@@ -29,6 +29,7 @@ describe('runtime snapshot repository', () => {
           createdBySentinel: false,
           firstSeenAt: '2026-05-16T10:00:00.000Z',
           lastSeenAt: '2026-05-16T10:00:00.000Z',
+          restartPolicy: 'unless-stopped',
           ports: [{ host: 8989, container: 8989, protocol: 'tcp' }],
           mounts: [],
           networks: ['cerebro-net'],
@@ -57,6 +58,7 @@ describe('runtime snapshot repository', () => {
     expect(latest?.hostname).toBe('cerebro');
     expect(latest?.rawRuntimeInventory).toEqual({ services: [{ id: 'sonarr' }] });
     expect(latest?.services[0]?.containerName).toBe('sonarr');
+    expect(latest?.services[0]?.restartPolicy).toBe('unless-stopped');
     expect(latest?.hostStatus.hostname).toBe('cerebro');
   });
 });

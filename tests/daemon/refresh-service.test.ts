@@ -28,6 +28,7 @@ describe('refresh service', () => {
             createdBySentinel: false,
             firstSeenAt: '2026-05-16T10:00:00.000Z',
             lastSeenAt: '2026-05-16T10:00:00.000Z',
+            restartPolicy: 'unless-stopped',
             ports: [],
             mounts: [],
             networks: [],
@@ -63,6 +64,7 @@ describe('refresh service', () => {
     expect(snapshotId).toBeGreaterThan(0);
     expect(latest?.hostname).toBe('cerebro');
     expect(latest?.services).toHaveLength(1);
+    expect(latest?.services[0]?.restartPolicy).toBe('unless-stopped');
     expect(latest?.hostStatus.hostname).toBe('cerebro');
   });
 });

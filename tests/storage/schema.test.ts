@@ -51,6 +51,7 @@ describe('storage schema bootstrap', () => {
         'created_by_sentinel',
         'first_seen_at',
         'last_seen_at',
+        'restart_policy',
         'last_snapshot_id',
       ]),
     );

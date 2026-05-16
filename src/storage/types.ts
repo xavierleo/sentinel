@@ -32,6 +32,7 @@ export interface PersistedRuntimeService {
   createdBySentinel: boolean;
   firstSeenAt: string;
   lastSeenAt: string;
+  restartPolicy: string;
   ports: PersistedRuntimeServicePort[];
   mounts: PersistedRuntimeServiceMount[];
   networks: string[];
@@ -77,4 +78,3 @@ export interface PersistedSnapshotWrite {
 export interface PersistedSnapshotRead extends PersistedSnapshotWrite {
   snapshotId: number;
 }
-
