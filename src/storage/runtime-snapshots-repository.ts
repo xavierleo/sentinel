@@ -66,6 +66,12 @@ interface RuntimeServiceNetworkRow {
   network_name: string;
 }
 
+export interface RuntimeSnapshotsRepository {
+  writeSnapshot: (snapshot: PersistedSnapshotWrite) => number;
+  readLatestSnapshot: () => PersistedSnapshotRead | undefined;
+  readPreviousSnapshot: () => PersistedSnapshotRead | undefined;
+}
+
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
@@ -202,7 +208,7 @@ function loadSnapshot(db: SqliteDatabase, snapshotId: number): PersistedSnapshot
   };
 }
 
-export function createRuntimeSnapshotsRepository(db: SqliteDatabase) {
+export function createRuntimeSnapshotsRepository(db: SqliteDatabase): RuntimeSnapshotsRepository {
   const writeSnapshot = db.transaction((snapshot: PersistedSnapshotWrite) => {
     const snapshotResult = db
       .prepare(
