@@ -38,7 +38,8 @@ const storageSchemaStatements = [
     first_seen_at text not null,
     last_seen_at text not null,
     last_snapshot_id integer,
-    foreign key (snapshot_id) references runtime_inventory_snapshots(id) on delete cascade
+    foreign key (snapshot_id) references runtime_inventory_snapshots(id) on delete cascade,
+    foreign key (last_snapshot_id) references runtime_inventory_snapshots(id) on delete set null
   )`,
   `create table if not exists runtime_service_ports (
     id integer primary key,
