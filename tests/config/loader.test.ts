@@ -16,6 +16,20 @@ runtime_inventory:
     expect(config.tui.colour_mode).toBe('auto');
   });
 
+  it('loads storage and daemon overrides from yaml', () => {
+    const config = loadConfigFromString(`
+storage:
+  driver: sqlite
+  sqlite_path: /tmp/sentinel-state.db
+daemon:
+  foreground: false
+`);
+
+    expect(config.storage.driver).toBe('sqlite');
+    expect(config.storage.sqlite_path).toBe('/tmp/sentinel-state.db');
+    expect(config.daemon.foreground).toBe(false);
+  });
+
   it('rejects invalid refresh intervals', () => {
     expect(() =>
       loadConfigFromString(`

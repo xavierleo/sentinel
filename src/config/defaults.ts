@@ -15,6 +15,10 @@ export const defaultConfig: SentinelConfig = {
     refresh_interval: '5m',
     store_snapshots: true,
   },
+  storage: {
+    driver: 'sqlite',
+    sqlite_path: '~/.sentinel/state.db',
+  },
   detection: {
     stacks_dir: '',
     common_stack_dirs: ['/opt/stacks', '/opt/docker', '/srv'],
@@ -35,6 +39,9 @@ export const defaultConfig: SentinelConfig = {
   },
   actions: {
     require_approval: true,
+  },
+  daemon: {
+    foreground: true,
   },
   logging: {
     level: 'info',

@@ -19,6 +19,10 @@ export const sentinelConfigSchema = z.object({
     refresh_interval: durationSchema,
     store_snapshots: z.boolean(),
   }),
+  storage: z.object({
+    driver: z.literal('sqlite'),
+    sqlite_path: z.string().min(1),
+  }),
   detection: z.object({
     stacks_dir: z.string(),
     common_stack_dirs: z.array(z.string()),
@@ -39,6 +43,9 @@ export const sentinelConfigSchema = z.object({
   }),
   actions: z.object({
     require_approval: z.boolean(),
+  }),
+  daemon: z.object({
+    foreground: z.boolean(),
   }),
   logging: z.object({
     level: z.enum(['debug', 'info', 'warn', 'error']),
