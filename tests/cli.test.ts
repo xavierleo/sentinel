@@ -316,6 +316,44 @@ describe('cli', () => {
     });
   });
 
+  it('preserves persisted source and createdBySentinel fields for inventory --json from stored snapshots', async () => {
+    const harness = createHarness();
+    const snapshot = createSnapshot({
+      services: [
+        {
+          ...createSnapshot().services[0],
+          profileId: 'sentinel-caddy',
+          displayName: 'Sentinel Caddy',
+          source: 'sentinel_manifest',
+          containerName: 'sentinel-caddy',
+          createdBySentinel: true,
+          lastSeenAt: '2026-05-15T11:00:00.000Z',
+        },
+      ],
+    });
+
+    const exitCode = await runCli(['inventory', '--json'], harness.io, {
+      discoverInventory: async () => {
+        throw new Error('should not rediscover');
+      },
+      readLatestSnapshot: () => snapshot,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stderr).toEqual([]);
+    expect(harness.stdout).toHaveLength(1);
+    expect(JSON.parse(harness.stdout[0] ?? '')).toMatchObject({
+      services: [
+        {
+          id: 'sentinel-caddy',
+          source: 'sentinel_manifest',
+          createdBySentinel: true,
+          lastSeenAt: '2026-05-15T11:00:00.000Z',
+        },
+      ],
+    });
+  });
+
   it('preserves the stored snapshot createdAt as generatedAt for inventory --json even with zero services', async () => {
     const harness = createHarness();
     const snapshot = createSnapshot({

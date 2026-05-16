@@ -181,7 +181,7 @@ function toRuntimeServiceProfile(service: PersistedRuntimeService): RuntimeServi
   return {
     id: service.profileId,
     displayName: service.displayName,
-    source: 'runtime_discovery',
+    source: service.source,
     containerName: service.containerName,
     image: service.image,
     status: service.status,
@@ -192,7 +192,7 @@ function toRuntimeServiceProfile(service: PersistedRuntimeService): RuntimeServi
     ports: service.ports.map((port) => ({ ...port })),
     mounts: service.mounts.map((mount) => ({ ...mount })),
     networks: [...service.networks],
-    createdBySentinel: false,
+    createdBySentinel: service.createdBySentinel,
     lastSeenAt: service.lastSeenAt,
     restartPolicy: service.restartPolicy,
   };

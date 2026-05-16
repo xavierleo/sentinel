@@ -27,7 +27,7 @@ export interface RuntimeServiceMount {
 export interface RuntimeServiceProfile {
   id: string;
   displayName: string;
-  source: 'runtime_discovery';
+  source: string;
   containerName: string;
   image: string;
   status: string;
@@ -39,7 +39,7 @@ export interface RuntimeServiceProfile {
   mounts: RuntimeServiceMount[];
   networks: string[];
   restartPolicy: string;
-  createdBySentinel: false;
+  createdBySentinel: boolean;
   lastSeenAt: string;
 }
 
