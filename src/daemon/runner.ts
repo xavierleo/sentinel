@@ -4,7 +4,6 @@ export interface DaemonRunnerDependencies {
   refreshIntervalMs: number;
   logger: {
     info: (message: string) => void;
-    error: (message: string) => void;
   };
 }
 
@@ -19,7 +18,6 @@ export function createDaemonRunner(deps: DaemonRunnerDependencies) {
           const snapshotId = await deps.refreshOnce();
           deps.logger.info(`Stored runtime snapshot ${snapshotId}`);
         } catch (error) {
-          deps.logger.error(error instanceof Error ? error.message : String(error));
           throw error;
         }
 

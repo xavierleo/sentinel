@@ -78,7 +78,7 @@ describe('cli', () => {
   });
 
   it('prints a clean daemon error and exits 2 when runtime refresh fails in the default daemon flow', async () => {
-    const harness = createHarness();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     vi.resetModules();
     vi.doMock('../src/config/defaults.js', () => ({
@@ -120,12 +120,13 @@ describe('cli', () => {
 
     try {
       const { runCli: runCliWithMocks } = await import('../src/cli.js');
-      const exitCode = await runCliWithMocks(['daemon'], harness.io);
+      const exitCode = await runCliWithMocks(['daemon']);
 
       expect(exitCode).toBe(2);
-      expect(harness.stdout).toEqual([]);
-      expect(harness.stderr).toEqual(['runtime refresh failed']);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledWith('runtime refresh failed');
     } finally {
+      consoleError.mockRestore();
       vi.doUnmock('../src/config/defaults.js');
       vi.doUnmock('../src/storage/sqlite.js');
       vi.doUnmock('../src/storage/runtime-snapshots-repository.js');

@@ -124,7 +124,6 @@ const defaultDeps: CliDependencies = {
       refreshIntervalMs: parseDurationMs(defaultConfig.runtime_inventory.refresh_interval),
       logger: {
         info: (message: string) => console.log(message),
-        error: (message: string) => console.error(message),
       },
     });
 

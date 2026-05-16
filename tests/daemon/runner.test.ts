@@ -18,7 +18,6 @@ describe('daemon runner', () => {
       refreshIntervalMs: 1000,
       logger: {
         info: () => {},
-        error: () => {},
       },
     });
 
@@ -42,7 +41,6 @@ describe('daemon runner', () => {
       refreshIntervalMs: 1000,
       logger: {
         info: () => {},
-        error: () => {},
       },
     });
 
@@ -60,8 +58,7 @@ describe('daemon runner', () => {
     await runPromise;
   });
 
-  it('logs and rejects when a refresh fails', async () => {
-    const errors: string[] = [];
+  it('rejects when a refresh fails', async () => {
     const runner = createDaemonRunner({
       refreshOnce: async () => {
         throw new Error('refresh failed');
@@ -70,11 +67,9 @@ describe('daemon runner', () => {
       refreshIntervalMs: 1000,
       logger: {
         info: () => {},
-        error: (message: string) => errors.push(message),
       },
     });
 
     await expect(runner.run()).rejects.toThrow('refresh failed');
-    expect(errors).toEqual(['refresh failed']);
   });
 });
