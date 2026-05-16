@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import type { SentinelConfig } from './schema.js';
 
 export const defaultConfig: SentinelConfig = {
@@ -17,7 +18,7 @@ export const defaultConfig: SentinelConfig = {
   },
   storage: {
     driver: 'sqlite',
-    sqlite_path: '~/.sentinel/state.db',
+    sqlite_path: `${homedir()}/.sentinel/state.db`,
   },
   detection: {
     stacks_dir: '',

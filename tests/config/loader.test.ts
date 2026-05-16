@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { loadConfigFromString } from '../../src/config/loader.js';
 
@@ -13,6 +14,7 @@ runtime_inventory:
     expect(config.agent.model).toBe('llama3.1:8b');
     expect(config.agent.ollama_url).toBe('http://localhost:11434');
     expect(config.runtime_inventory.refresh_interval).toBe('10m');
+    expect(config.storage.sqlite_path).toBe(`${homedir()}/.sentinel/state.db`);
     expect(config.tui.colour_mode).toBe('auto');
   });
 
