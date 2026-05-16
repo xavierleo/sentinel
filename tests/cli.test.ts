@@ -46,6 +46,22 @@ describe('cli', () => {
     expect(harness.stdout.join('\n')).toContain('Daemon: not implemented yet');
   });
 
+  it('runs the daemon command through an injected dependency', async () => {
+    const harness = createHarness();
+    let runDaemonCalls = 0;
+
+    const exitCode = await runCli(['daemon'], harness.io, {
+      runDaemon: async () => {
+        runDaemonCalls += 1;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runDaemonCalls).toBe(1);
+    expect(harness.stdout).toEqual([]);
+    expect(harness.stderr).toEqual([]);
+  });
+
   it('prints Docker inventory when discovery succeeds', async () => {
     const harness = createHarness();
 

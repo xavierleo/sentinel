@@ -2,9 +2,15 @@ import { runChatLoop } from './agent/chat-loop.js';
 import { createOllamaDecisionCaller } from './agent/ollama-client.js';
 import { defaultConfig } from './config/defaults.js';
 import { getVersionLabel } from './index.js';
+import { createRefreshService } from './daemon/refresh-service.js';
+import { createDaemonRunner } from './daemon/runner.js';
 import { discoverDockerInventory, type RuntimeInventoryResult } from './discovery/docker-discovery.js';
+import { createHostStatusTool } from './tools/host.js';
 import { buildRuntimeInventoryPayload } from './discovery/runtime-inventory.js';
 import type { RuntimeServiceProfile } from './discovery/runtime-profile.js';
+import { createRuntimeSnapshotsRepository } from './storage/runtime-snapshots-repository.js';
+import { createStateDatabase } from './storage/sqlite.js';
+import type { JsonValue } from './storage/types.js';
 import { createRuntimeToolRegistry } from './tools/index.js';
 
 export interface CliIo {
@@ -15,6 +21,7 @@ export interface CliIo {
 export interface CliDependencies {
   discoverInventory: () => Promise<RuntimeInventoryResult>;
   runChat: (message: string) => Promise<string>;
+  runDaemon: () => Promise<void>;
 }
 
 const usage = `Usage: sentinel <command>
@@ -26,7 +33,7 @@ Commands:
   inventory       Show runtime inventory status
   inventory --json
                   Show runtime inventory as structured JSON
-  daemon          Start daemon (not implemented yet)
+  daemon          Start daemon
   chat            Start chat client (not implemented yet)
   tui             Start TUI client (not implemented yet)`;
 
@@ -45,7 +52,99 @@ const defaultDeps: CliDependencies = {
       callModel: createOllamaDecisionCaller(defaultConfig),
       hostname: 'localhost',
     }),
+  runDaemon: async () => {
+    const db = createStateDatabase(defaultConfig.storage.sqlite_path);
+    const repository = createRuntimeSnapshotsRepository(db);
+    const hostStatusTool = createHostStatusTool();
+    const refreshService = createRefreshService({
+      collectRuntimeInventory: async () => {
+        const inventory = await discoverDockerInventory();
+        if (inventory.status !== 'ok') {
+          throw new Error(inventory.message);
+        }
+
+        return {
+          hostname: null,
+          dockerVersion: null,
+          composeVersion: null,
+          rawRuntimeInventory: {
+            status: inventory.status,
+            profiles: inventory.profiles,
+          } as unknown as JsonValue,
+          services: inventory.profiles.map((profile) => ({
+            profileId: profile.id,
+            displayName: profile.displayName,
+            source: profile.source,
+            containerName: profile.containerName,
+            image: profile.image,
+            status: profile.status,
+            health: profile.health,
+            composeProject: profile.composeProject ?? null,
+            composeService: profile.composeService ?? null,
+            stackDir: profile.stackDir ?? null,
+            createdBySentinel: profile.createdBySentinel,
+            firstSeenAt: profile.lastSeenAt,
+            lastSeenAt: profile.lastSeenAt,
+            ports: profile.ports,
+            mounts: profile.mounts,
+            networks: profile.networks,
+          })),
+        };
+      },
+      collectHostStatus: async () => {
+        const hostStatus = await hostStatusTool();
+
+        return {
+          rawHostStatus: hostStatus as unknown as JsonValue,
+          hostStatus: {
+            hostname: hostStatus.hostname,
+            kernel: hostStatus.platform.kernel,
+            uptime: hostStatus.uptime,
+            memory: hostStatus.memory,
+            rootDisk: hostStatus.rootDisk,
+            dockerServerVersion: hostStatus.docker.serverVersion,
+            dockerComposeVersion: hostStatus.docker.composeVersion,
+          },
+        };
+      },
+      repository,
+      now: () => new Date().toISOString(),
+    });
+    const runner = createDaemonRunner({
+      refreshOnce: () => refreshService.refreshOnce(),
+      sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+      refreshIntervalMs: parseDurationMs(defaultConfig.runtime_inventory.refresh_interval),
+      logger: {
+        info: (message: string) => console.log(message),
+        error: (message: string) => console.error(message),
+      },
+    });
+
+    const stop = () => runner.stop();
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+
+    try {
+      await runner.run();
+    } finally {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      db.close();
+    }
+  },
 };
+
+function parseDurationMs(value: string): number {
+  const match = /^(\d+)([smhd])$/.exec(value);
+  if (!match) {
+    throw new Error(`Invalid refresh interval: ${value}`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const unitMs = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  return amount * unitMs;
+}
 
 function printNotImplemented(command: string, io: CliIo): number {
   io.stderr(`${command} is not implemented yet in Sentinel v1.0 foundation.`);
@@ -146,6 +245,9 @@ TUI: not implemented yet`);
       }
 
     case 'daemon':
+      await resolvedDeps.runDaemon();
+      return 0;
+
     case 'tui':
       return printNotImplemented(command, io);
 

@@ -1,0 +1,29 @@
+import { describe, expect, it } from 'vitest';
+import { createDaemonRunner } from '../../src/daemon/runner.js';
+
+describe('daemon runner', () => {
+  it('refreshes immediately when the daemon starts', async () => {
+    const calls: string[] = [];
+    let runner!: ReturnType<typeof createDaemonRunner>;
+
+    runner = createDaemonRunner({
+      refreshOnce: async () => {
+        calls.push('refresh');
+        runner.stop();
+        return 42;
+      },
+      sleep: async () => {
+        calls.push('sleep');
+      },
+      refreshIntervalMs: 1000,
+      logger: {
+        info: () => {},
+        error: () => {},
+      },
+    });
+
+    await runner.run();
+
+    expect(calls).toEqual(['refresh']);
+  });
+});
