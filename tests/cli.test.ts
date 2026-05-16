@@ -77,6 +77,63 @@ describe('cli', () => {
     expect(harness.stderr).toEqual(['database is locked']);
   });
 
+  it('prints a clean daemon error and exits 2 when runtime refresh fails in the default daemon flow', async () => {
+    const harness = createHarness();
+
+    vi.resetModules();
+    vi.doMock('../src/config/defaults.js', () => ({
+      defaultConfig: {
+        storage: { sqlite_path: ':memory:' },
+        runtime_inventory: { refresh_interval: '5m' },
+      },
+    }));
+    vi.doMock('../src/storage/sqlite.js', () => ({
+      createStateDatabase: () => ({ close: () => {} }),
+    }));
+    vi.doMock('../src/storage/runtime-snapshots-repository.js', () => ({
+      createRuntimeSnapshotsRepository: () => ({}),
+    }));
+    vi.doMock('../src/tools/host.js', () => ({
+      createHostStatusTool: () => async () => ({
+        hostname: 'sentinel',
+        platform: { kernel: 'Linux' },
+        uptime: '1 day',
+        memory: { totalMb: 1, usedMb: 1, freeMb: 0, availableMb: 0 },
+        rootDisk: {
+          filesystem: '/',
+          size: '1G',
+          used: '1G',
+          available: '0G',
+          percentUsed: '100%',
+          mountpoint: '/',
+        },
+        docker: { serverVersion: '27.0.0', composeVersion: '2.0.0' },
+      }),
+    }));
+    vi.doMock('../src/daemon/refresh-service.js', () => ({
+      createRefreshService: () => ({
+        refreshOnce: async () => {
+          throw new Error('runtime refresh failed');
+        },
+      }),
+    }));
+
+    try {
+      const { runCli: runCliWithMocks } = await import('../src/cli.js');
+      const exitCode = await runCliWithMocks(['daemon'], harness.io);
+
+      expect(exitCode).toBe(2);
+      expect(harness.stdout).toEqual([]);
+      expect(harness.stderr).toEqual(['runtime refresh failed']);
+    } finally {
+      vi.doUnmock('../src/config/defaults.js');
+      vi.doUnmock('../src/storage/sqlite.js');
+      vi.doUnmock('../src/storage/runtime-snapshots-repository.js');
+      vi.doUnmock('../src/tools/host.js');
+      vi.doUnmock('../src/daemon/refresh-service.js');
+    }
+  });
+
   it('prints Docker inventory when discovery succeeds', async () => {
     const harness = createHarness();
 

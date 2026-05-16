@@ -20,6 +20,7 @@ export function createDaemonRunner(deps: DaemonRunnerDependencies) {
           deps.logger.info(`Stored runtime snapshot ${snapshotId}`);
         } catch (error) {
           deps.logger.error(error instanceof Error ? error.message : String(error));
+          throw error;
         }
 
         if (stopped) {
