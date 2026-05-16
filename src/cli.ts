@@ -222,8 +222,8 @@ function formatInventory(profiles: RuntimeServiceProfile[]): string {
   ].join('\n');
 }
 
-function formatInventoryJson(result: RuntimeInventoryResult): string {
-  return JSON.stringify(buildRuntimeInventoryPayload(result), null, 2);
+function formatInventoryJson(result: RuntimeInventoryResult, generatedAt?: string): string {
+  return JSON.stringify(buildRuntimeInventoryPayload(result, { generatedAt }), null, 2);
 }
 
 function parseChatMessageArgs(args: string[]): { ok: true; message: string } | { ok: false; error: string } {
@@ -312,7 +312,7 @@ ${snapshotLines.join('\n')}`);
           profiles,
         };
 
-        io.stdout(json ? formatInventoryJson(result) : formatInventory(profiles));
+        io.stdout(json ? formatInventoryJson(result, snapshot.createdAt) : formatInventory(profiles));
         return 0;
       }
 

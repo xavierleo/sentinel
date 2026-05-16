@@ -16,6 +16,10 @@ export interface RuntimeInventoryPayload {
   };
 }
 
+interface BuildRuntimeInventoryPayloadOptions {
+  generatedAt?: string;
+}
+
 function countProfiles(profiles: RuntimeServiceProfile[]) {
   const running = profiles.filter((profile) => profile.status === 'running').length;
   return {
@@ -25,11 +29,14 @@ function countProfiles(profiles: RuntimeServiceProfile[]) {
   };
 }
 
-export function buildRuntimeInventoryPayload(result: RuntimeInventoryResult): RuntimeInventoryPayload {
+export function buildRuntimeInventoryPayload(
+  result: RuntimeInventoryResult,
+  options: BuildRuntimeInventoryPayloadOptions = {},
+): RuntimeInventoryPayload {
   if (result.status !== 'ok') {
     return {
       schemaVersion: 1,
-      generatedAt: new Date().toISOString(),
+      generatedAt: options.generatedAt ?? new Date().toISOString(),
       counts: {
         total: 0,
         running: 0,
@@ -45,7 +52,7 @@ export function buildRuntimeInventoryPayload(result: RuntimeInventoryResult): Ru
 
   return {
     schemaVersion: 1,
-    generatedAt: result.profiles[0]?.lastSeenAt ?? new Date().toISOString(),
+    generatedAt: options.generatedAt ?? result.profiles[0]?.lastSeenAt ?? new Date().toISOString(),
     counts: countProfiles(result.profiles),
     services: result.profiles,
   };

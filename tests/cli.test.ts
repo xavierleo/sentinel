@@ -316,6 +316,35 @@ describe('cli', () => {
     });
   });
 
+  it('preserves the stored snapshot createdAt as generatedAt for inventory --json even with zero services', async () => {
+    const harness = createHarness();
+    const snapshot = createSnapshot({
+      createdAt: '2026-05-12T07:30:00.000Z',
+      services: [],
+    });
+
+    const exitCode = await runCli(['inventory', '--json'], harness.io, {
+      discoverInventory: async () => {
+        throw new Error('should not rediscover');
+      },
+      readLatestSnapshot: () => snapshot,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stderr).toEqual([]);
+    expect(harness.stdout).toHaveLength(1);
+    expect(JSON.parse(harness.stdout[0] ?? '')).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-05-12T07:30:00.000Z',
+      counts: {
+        total: 0,
+        running: 0,
+        stopped: 0,
+      },
+      services: [],
+    });
+  });
+
   it('fails clearly when inventory is requested before any snapshot exists', async () => {
     const harness = createHarness();
 

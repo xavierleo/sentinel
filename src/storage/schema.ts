@@ -81,4 +81,8 @@ export function applyStorageSchema(db: InstanceType<typeof Database>) {
   if (!hasColumn(db, 'runtime_services', 'restart_policy')) {
     db.exec("alter table runtime_services add column restart_policy text not null default 'unknown'");
   }
+
+  db.exec(`update runtime_services
+    set restart_policy = 'unknown'
+    where restart_policy is null or trim(restart_policy) = ''`);
 }
