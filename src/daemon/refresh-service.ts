@@ -2,8 +2,8 @@ import type { PersistedSnapshotWrite } from '../storage/types.js';
 import type {
   CollectHostStatus,
   CollectRuntimeInventory,
-  CollectedHostStatus,
-  CollectedRuntimeInventory,
+  CollectedHostStatusSnapshot,
+  CollectedRuntimeService,
 } from './collectors.js';
 
 interface RuntimeSnapshotsRepository {
@@ -17,11 +17,46 @@ export interface RefreshServiceDependencies {
   now: () => string;
 }
 
+function mapCollectedService(service: CollectedRuntimeService): PersistedSnapshotWrite['services'][number] {
+  return {
+    profileId: service.profileId,
+    displayName: service.displayName,
+    source: service.source,
+    containerName: service.containerName,
+    image: service.image,
+    status: service.status,
+    health: service.health,
+    composeProject: service.composeProject,
+    composeService: service.composeService,
+    stackDir: service.stackDir,
+    createdBySentinel: service.createdBySentinel,
+    firstSeenAt: service.firstSeenAt,
+    lastSeenAt: service.lastSeenAt,
+    ports: service.ports,
+    mounts: service.mounts,
+    networks: service.networks,
+  };
+}
+
+function mapCollectedHostStatus(hostStatus: CollectedHostStatusSnapshot): PersistedSnapshotWrite['hostStatus'] {
+  return {
+    hostname: hostStatus.hostname,
+    kernel: hostStatus.kernel,
+    uptime: hostStatus.uptime,
+    memory: hostStatus.memory,
+    rootDisk: hostStatus.rootDisk,
+    dockerServerVersion: hostStatus.dockerServerVersion,
+    dockerComposeVersion: hostStatus.dockerComposeVersion,
+  };
+}
+
 export function createRefreshService(deps: RefreshServiceDependencies) {
   return {
     async refreshOnce(): Promise<number> {
-      const runtimeInventory: CollectedRuntimeInventory = await deps.collectRuntimeInventory();
-      const hostStatus: CollectedHostStatus = await deps.collectHostStatus();
+      const [runtimeInventory, hostStatus] = await Promise.all([
+        deps.collectRuntimeInventory(),
+        deps.collectHostStatus(),
+      ]);
 
       return deps.repository.writeSnapshot({
         createdAt: deps.now(),
@@ -30,8 +65,8 @@ export function createRefreshService(deps: RefreshServiceDependencies) {
         composeVersion: runtimeInventory.composeVersion,
         rawRuntimeInventory: runtimeInventory.rawRuntimeInventory,
         rawHostStatus: hostStatus.rawHostStatus,
-        services: runtimeInventory.services,
-        hostStatus: hostStatus.hostStatus,
+        services: runtimeInventory.services.map(mapCollectedService),
+        hostStatus: mapCollectedHostStatus(hostStatus.hostStatus),
       });
     },
   };
