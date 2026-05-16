@@ -10,7 +10,7 @@ import { buildRuntimeInventoryPayload } from './discovery/runtime-inventory.js';
 import type { RuntimeServiceProfile } from './discovery/runtime-profile.js';
 import { createRuntimeSnapshotsRepository } from './storage/runtime-snapshots-repository.js';
 import { createStateDatabase } from './storage/sqlite.js';
-import type { JsonValue } from './storage/types.js';
+import type { JsonValue, PersistedRuntimeService, PersistedSnapshotRead } from './storage/types.js';
 import { createRuntimeToolRegistry } from './tools/index.js';
 
 export interface CliIo {
@@ -20,6 +20,7 @@ export interface CliIo {
 
 export interface CliDependencies {
   discoverInventory: () => Promise<RuntimeInventoryResult>;
+  readLatestSnapshot: () => PersistedSnapshotRead | undefined;
   runChat: (message: string) => Promise<string>;
   runDaemon: () => Promise<void>;
 }
@@ -52,6 +53,15 @@ const defaultIo: CliIo = {
 
 const defaultDeps: CliDependencies = {
   discoverInventory: () => discoverDockerInventory(),
+  readLatestSnapshot: () => {
+    const db = createStateDatabase(defaultConfig.storage.sqlite_path);
+
+    try {
+      return createRuntimeSnapshotsRepository(db).readLatestSnapshot();
+    } finally {
+      db.close();
+    }
+  },
   runChat: async (message: string) =>
     runChatLoop({
       message,
@@ -166,6 +176,31 @@ function formatPorts(profile: RuntimeServiceProfile): string {
   return profile.ports.map((port) => `${port.host}:${port.container}/${port.protocol}`).join(', ');
 }
 
+function toRuntimeServiceProfile(service: PersistedRuntimeService): RuntimeServiceProfile {
+  return {
+    id: service.profileId,
+    displayName: service.displayName,
+    source: 'runtime_discovery',
+    containerName: service.containerName,
+    image: service.image,
+    status: service.status,
+    health: service.health ?? 'unknown',
+    composeProject: service.composeProject ?? undefined,
+    composeService: service.composeService ?? undefined,
+    stackDir: service.stackDir ?? undefined,
+    ports: service.ports.map((port) => ({ ...port })),
+    mounts: service.mounts.map((mount) => ({ ...mount })),
+    networks: [...service.networks],
+    restartPolicy: 'unknown',
+    createdBySentinel: false,
+    lastSeenAt: service.lastSeenAt,
+  };
+}
+
+function readInventoryProfilesFromSnapshot(snapshot: PersistedSnapshotRead): RuntimeServiceProfile[] {
+  return snapshot.services.map((service) => toRuntimeServiceProfile(service));
+}
+
 function formatInventory(profiles: RuntimeServiceProfile[]): string {
   const running = profiles.filter((profile) => profile.status === 'running').length;
   const stopped = profiles.length - running;
@@ -224,12 +259,20 @@ export async function runCli(
       return 0;
 
     case 'status':
-      io.stdout(`Sentinel status
+      {
+        const snapshot = resolvedDeps.readLatestSnapshot();
+        const snapshotLines = snapshot
+          ? [`Snapshots: available`, `Latest snapshot: ${snapshot.createdAt}`]
+          : [`Snapshots: none`, 'Latest snapshot: never'];
+
+        io.stdout(`Sentinel status
 Foundation: installed
 Daemon: not implemented yet
 Chat: not implemented yet
-TUI: not implemented yet`);
-      return 0;
+TUI: not implemented yet
+${snapshotLines.join('\n')}`);
+        return 0;
+      }
 
     case 'inventory':
       {
@@ -240,14 +283,19 @@ TUI: not implemented yet`);
           return 1;
         }
 
-        const result = await resolvedDeps.discoverInventory();
-
-        if (result.status !== 'ok') {
-          io.stderr(result.message);
+        const snapshot = resolvedDeps.readLatestSnapshot();
+        if (!snapshot) {
+          io.stderr('No stored runtime snapshot is available yet. Start `sentinel daemon` and wait for the first refresh.');
           return 2;
         }
 
-        io.stdout(json ? formatInventoryJson(result) : formatInventory(result.profiles));
+        const profiles = readInventoryProfilesFromSnapshot(snapshot);
+        const result: RuntimeInventoryResult = {
+          status: 'ok',
+          profiles,
+        };
+
+        io.stdout(json ? formatInventoryJson(result) : formatInventory(profiles));
         return 0;
       }
 
