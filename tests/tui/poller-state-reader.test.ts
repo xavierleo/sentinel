@@ -128,6 +128,30 @@ describe('snapshot poller', () => {
 
     expect(seen).toEqual([1]);
   });
+
+  it('start is idempotent and does not create duplicate intervals', async () => {
+    vi.useFakeTimers();
+    const seen: number[] = [];
+    let snapshotId = 1;
+
+    const poller = createSnapshotPoller({
+      readLatestSnapshot: () => ({ snapshotId, ...makeSnapshot() }),
+      intervalMs: 10,
+      onSnapshot: (snapshot) => {
+        if (snapshot) {
+          seen.push(snapshot.snapshotId);
+        }
+      },
+    });
+
+    poller.start();
+    poller.start();
+    snapshotId = 2;
+    await vi.advanceTimersByTimeAsync(10);
+    poller.stop();
+
+    expect(seen).toEqual([1, 2]);
+  });
 });
 
 describe('snapshot state reader', () => {

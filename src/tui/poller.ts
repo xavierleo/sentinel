@@ -27,6 +27,9 @@ export function createSnapshotPoller(options: SnapshotPollerOptions): SnapshotPo
 
   return {
     start() {
+      if (timer) {
+        return;
+      }
       tick();
       timer = setInterval(tick, options.intervalMs);
     },
