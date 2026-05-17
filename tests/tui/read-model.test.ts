@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTuiReadModel } from '../../src/tui/read-model.js';
+import { createSnapshotPoller } from '../../src/tui/poller.js';
 import type { PersistedSnapshotRead } from '../../src/storage/types.js';
 
 function makeSnapshot(overrides: Partial<PersistedSnapshotRead> = {}): PersistedSnapshotRead {
@@ -109,5 +110,27 @@ describe('tui read model', () => {
     expect(model.emptyState?.kind).toBe('no_snapshot');
     expect(model.inventoryRows).toEqual([]);
     expect(model.focusService).toBeUndefined();
+  });
+
+  it('notifies listeners when the snapshot id changes', async () => {
+    const seen: number[] = [];
+    let current = makeSnapshot({ snapshotId: 1 });
+
+    const poller = createSnapshotPoller({
+      readLatestSnapshot: () => current,
+      intervalMs: 10,
+      onSnapshot: (snapshot) => {
+        if (snapshot) {
+          seen.push(snapshot.snapshotId);
+        }
+      },
+    });
+
+    poller.start();
+    current = makeSnapshot({ snapshotId: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    poller.stop();
+
+    expect(seen).toContain(2);
   });
 });
