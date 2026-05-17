@@ -5,7 +5,7 @@ Sentinel v1.0 is currently building the Runtime Awareness foundation.
 The current milestone is:
 
 ```text
-Fresh install -> daemon discovers Docker state -> stored snapshots power sentinel inventory/status -> command center backbone
+Fresh install -> daemon discovers Docker state -> sentinel tui opens a live command-center shell over stored snapshots
 ```
 
 Filesystem reads, container actions, Telegram, scheduling, service APIs, and provisioning are intentionally out of scope for v1.0.
@@ -23,7 +23,7 @@ The installer downloads the latest GitHub Release, verifies its SHA-256 checksum
 To pin a specific version:
 
 ```bash
-SENTINEL_VERSION=0.3.0 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
+SENTINEL_VERSION=0.4.0 curl -fsSL https://raw.githubusercontent.com/xavierleo/sentinel/main/scripts/install.sh | bash
 ```
 
 After installation:
@@ -34,10 +34,11 @@ sentinel daemon
 sentinel status
 sentinel inventory
 sentinel inventory --json
+sentinel tui
 sentinel chat --message "what's running?"
 ```
 
-`sentinel daemon` now performs refresh and persistence into SQLite. `sentinel status` and `sentinel inventory` read the latest stored snapshot. `sentinel chat` and `sentinel tui` are still early relative to the long-term command center vision.
+`sentinel daemon` performs refresh and persistence into SQLite. `sentinel status`, `sentinel inventory`, and `sentinel tui` now read daemon-owned stored state. The first TUI cut is read-only and live-refreshing, with watchtower, inventory, and focus panes.
 
 ## Manual Source Install
 
@@ -71,6 +72,7 @@ sentinel daemon
 sentinel status
 sentinel inventory
 sentinel inventory --json
+sentinel tui
 sentinel chat --message "what's running?"
 ```
 
@@ -85,8 +87,8 @@ npm ci -> npm test -> npm run typecheck -> npm run build -> npm pack --dry-run
 Releases are created from version tags:
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 The release workflow builds the package, creates a release tarball plus SHA-256 checksum, smoke tests the tarball, creates an npm tarball, uploads the artifacts, and attaches them to a GitHub Release.
