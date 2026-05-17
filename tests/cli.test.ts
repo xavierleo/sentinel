@@ -157,6 +157,22 @@ describe('cli', () => {
     expect(harness.stderr).toEqual(['database is locked']);
   });
 
+  it('runs the tui command through an injected dependency', async () => {
+    const harness = createHarness();
+    let runTuiCalls = 0;
+
+    const exitCode = await runCli(['tui'], harness.io, {
+      runTui: async () => {
+        runTuiCalls += 1;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTuiCalls).toBe(1);
+    expect(harness.stdout).toEqual([]);
+    expect(harness.stderr).toEqual([]);
+  });
+
   it('prints a clean daemon error and exits 2 when runtime refresh fails in the default daemon flow', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 

@@ -23,6 +23,7 @@ export interface CliDependencies {
   readLatestSnapshot: () => PersistedSnapshotRead | undefined;
   runChat: (message: string) => Promise<string>;
   runDaemon: () => Promise<void>;
+  runTui: () => Promise<void>;
 }
 
 function getFirstSeenAt(profile: RuntimeServiceProfile): string {
@@ -149,6 +150,9 @@ const defaultDeps: CliDependencies = {
       process.off('SIGTERM', stop);
       db.close();
     }
+  },
+  runTui: async () => {
+    throw new Error('tui is not implemented yet in Sentinel v1.0 foundation.');
   },
 };
 
@@ -326,7 +330,13 @@ ${snapshotLines.join('\n')}`);
       }
 
     case 'tui':
-      return printNotImplemented(command, io);
+      try {
+        await resolvedDeps.runTui();
+        return 0;
+      } catch (error) {
+        io.stderr(error instanceof Error ? error.message : String(error));
+        return 2;
+      }
 
     case 'chat':
       {
