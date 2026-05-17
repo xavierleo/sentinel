@@ -1,65 +1,83 @@
-export type KeyboardSignal = 'refresh' | 'quit';
-
 export interface KeyboardState {
   selectedIndex: number;
-  helpVisible: boolean;
-  signal?: KeyboardSignal;
+  helpOpen: boolean;
 }
 
-export interface KeyboardKey {
-  upArrow?: boolean;
-  downArrow?: boolean;
+export interface KeyboardResult extends KeyboardState {
+  shouldRefresh: boolean;
+  shouldQuit: boolean;
 }
 
-function clampSelection(selectedIndex: number, itemCount: number): number {
-  if (itemCount <= 0) {
-    return 0;
+export function reduceKeyPress(state: KeyboardState, input: string, rowCount: number): KeyboardResult {
+  const maxIndex = Math.max(0, rowCount - 1);
+
+  if (input === 'j' || input === '\u001B[B') {
+    return {
+      selectedIndex: Math.min(maxIndex, state.selectedIndex + 1),
+      helpOpen: state.helpOpen,
+      shouldRefresh: false,
+      shouldQuit: false,
+    };
   }
 
-  return Math.max(0, Math.min(selectedIndex, itemCount - 1));
-}
-
-export function reduceKeyboardState(
-  state: KeyboardState,
-  input: string,
-  key: KeyboardKey,
-  itemCount: number,
-): KeyboardState {
-  if (input === 'q') {
-    return { ...state, signal: 'quit' };
-  }
-
-  if (input === 'r') {
-    return { ...state, signal: 'refresh' };
-  }
-
-  if (input === '?') {
-    return { ...state, helpVisible: !state.helpVisible, signal: undefined };
+  if (input === 'k' || input === '\u001B[A') {
+    return {
+      selectedIndex: Math.max(0, state.selectedIndex - 1),
+      helpOpen: state.helpOpen,
+      shouldRefresh: false,
+      shouldQuit: false,
+    };
   }
 
   if (input === 'g') {
-    return { ...state, selectedIndex: 0, signal: undefined };
+    return {
+      selectedIndex: 0,
+      helpOpen: state.helpOpen,
+      shouldRefresh: false,
+      shouldQuit: false,
+    };
   }
 
   if (input === 'G') {
-    return { ...state, selectedIndex: clampSelection(itemCount - 1, itemCount), signal: undefined };
-  }
-
-  if (input === 'j' || key.downArrow) {
     return {
-      ...state,
-      selectedIndex: clampSelection(state.selectedIndex + 1, itemCount),
-      signal: undefined,
+      selectedIndex: maxIndex,
+      helpOpen: state.helpOpen,
+      shouldRefresh: false,
+      shouldQuit: false,
     };
   }
 
-  if (input === 'k' || key.upArrow) {
+  if (input === '?') {
     return {
-      ...state,
-      selectedIndex: clampSelection(state.selectedIndex - 1, itemCount),
-      signal: undefined,
+      selectedIndex: state.selectedIndex,
+      helpOpen: !state.helpOpen,
+      shouldRefresh: false,
+      shouldQuit: false,
     };
   }
 
-  return { ...state, signal: undefined };
+  if (input === 'r') {
+    return {
+      selectedIndex: state.selectedIndex,
+      helpOpen: state.helpOpen,
+      shouldRefresh: true,
+      shouldQuit: false,
+    };
+  }
+
+  if (input === 'q') {
+    return {
+      selectedIndex: state.selectedIndex,
+      helpOpen: state.helpOpen,
+      shouldRefresh: false,
+      shouldQuit: true,
+    };
+  }
+
+  return {
+    selectedIndex: state.selectedIndex,
+    helpOpen: state.helpOpen,
+    shouldRefresh: false,
+    shouldQuit: false,
+  };
 }
