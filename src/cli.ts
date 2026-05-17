@@ -12,6 +12,7 @@ import { createRuntimeSnapshotsRepository } from './storage/runtime-snapshots-re
 import { createStateDatabase } from './storage/sqlite.js';
 import type { JsonValue, PersistedRuntimeService, PersistedSnapshotRead } from './storage/types.js';
 import { createRuntimeToolRegistry } from './tools/index.js';
+import { runTuiApp } from './tui/index.js';
 
 export interface CliIo {
   stdout: (message: string) => void;
@@ -45,7 +46,7 @@ Commands:
                   Show runtime inventory as structured JSON
   daemon          Start daemon
   chat            Start chat client (not implemented yet)
-  tui             Start TUI client (not implemented yet)`;
+  tui             Start TUI client`;
 
 const defaultIo: CliIo = {
   stdout: (message: string) => console.log(message),
@@ -151,9 +152,7 @@ const defaultDeps: CliDependencies = {
       db.close();
     }
   },
-  runTui: async () => {
-    throw new Error('tui is not implemented yet in Sentinel v1.0 foundation.');
-  },
+  runTui: () => runTuiApp(),
 };
 
 function parseDurationMs(value: string): number {
@@ -282,7 +281,7 @@ export async function runCli(
 Foundation: installed
 Daemon: not implemented yet
 Chat: not implemented yet
-TUI: not implemented yet
+TUI: available
 ${snapshotLines.join('\n')}`);
         return 0;
       }

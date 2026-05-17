@@ -173,6 +173,27 @@ describe('cli', () => {
     expect(harness.stderr).toEqual([]);
   });
 
+  it('prints a clean tui error when the default tui flow fails', async () => {
+    vi.resetModules();
+    vi.doMock('../src/tui/index.js', () => ({
+      runTuiApp: async () => {
+        throw new Error('no snapshot available');
+      },
+    }));
+
+    try {
+      const { runCli: runCliWithMocks } = await import('../src/cli.js');
+      const harness = createHarness();
+      const exitCode = await runCliWithMocks(['tui'], harness.io);
+
+      expect(exitCode).toBe(2);
+      expect(harness.stdout).toEqual([]);
+      expect(harness.stderr).toEqual(['no snapshot available']);
+    } finally {
+      vi.doUnmock('../src/tui/index.js');
+    }
+  });
+
   it('prints a clean daemon error and exits 2 when runtime refresh fails in the default daemon flow', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
