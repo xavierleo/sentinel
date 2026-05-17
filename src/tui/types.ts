@@ -1,3 +1,5 @@
+import type { LogPreviewView } from './log-preview.js';
+
 export type SnapshotFreshness = 'fresh' | 'stale';
 
 export interface WatchtowerView {
@@ -33,6 +35,7 @@ export interface FocusServiceView {
   portsLabel: string;
   mountsLabel: string;
   networksLabel: string;
+  logPreview?: LogPreviewView;
 }
 
 export interface FooterView {
@@ -50,6 +53,7 @@ export interface EmptyStateView {
 export interface TuiReadModel {
   watchtower: WatchtowerView;
   inventoryRows: InventoryRowView[];
+  selectedInventoryIndex?: number;
   focusService?: FocusServiceView;
   footer: FooterView;
   emptyState?: EmptyStateView;

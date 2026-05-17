@@ -1,4 +1,5 @@
 export interface BuildLogPreviewInput {
+  containerName: string;
   title: string;
   body: string[];
   maxLines: number;
@@ -6,6 +7,7 @@ export interface BuildLogPreviewInput {
 }
 
 export interface LogPreviewView {
+  containerName: string;
   title: string;
   lines: string[];
   truncated: boolean;
@@ -14,6 +16,7 @@ export interface LogPreviewView {
 export function buildLogPreview(input: BuildLogPreviewInput): LogPreviewView {
   if (input.body.length === 0) {
     return {
+      containerName: input.containerName,
       title: input.title,
       lines: [input.unavailableMessage ?? 'No recent events available.'],
       truncated: false,
@@ -21,6 +24,7 @@ export function buildLogPreview(input: BuildLogPreviewInput): LogPreviewView {
   }
 
   return {
+    containerName: input.containerName,
     title: input.title,
     lines: input.body.slice(0, input.maxLines),
     truncated: input.body.length > input.maxLines,

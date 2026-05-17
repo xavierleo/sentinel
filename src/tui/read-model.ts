@@ -107,6 +107,7 @@ export function buildTuiReadModel(input: BuildTuiReadModelInput): TuiReadModel {
         diskLabel: '-',
       },
       inventoryRows: [],
+      selectedInventoryIndex: undefined,
       footer: {
         snapshotAgeLabel: 'no snapshot',
         safetyLabel: 'read-only',
@@ -141,6 +142,7 @@ export function buildTuiReadModel(input: BuildTuiReadModelInput): TuiReadModel {
   return {
     watchtower,
     inventoryRows,
+    selectedInventoryIndex: selectedService ? selectionIndex : undefined,
     focusService: buildFocusServiceView(selectedService),
     footer,
   };

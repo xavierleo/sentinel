@@ -82,9 +82,22 @@ describe('tui read model', () => {
     });
 
     expect(model.inventoryRows.map((row) => row.containerName)).toEqual(['sonarr', 'paperless']);
+    expect(model.selectedInventoryIndex).toBe(0);
     expect(model.focusService?.containerName).toBe('sonarr');
     expect(model.watchtower.runningCount).toBe(1);
     expect(model.watchtower.stoppedCount).toBe(1);
+  });
+
+  it('clamps the selected inventory index to the focused row', () => {
+    const model = buildTuiReadModel({
+      snapshot: makeSnapshot(),
+      now: '2026-05-17T10:01:00.000Z',
+      refreshIntervalMs: 300_000,
+      selectedIndex: 99,
+    });
+
+    expect(model.selectedInventoryIndex).toBe(1);
+    expect(model.focusService?.containerName).toBe('paperless');
   });
 
   it('marks the snapshot stale when the stored snapshot is older than the refresh interval', () => {
@@ -109,6 +122,7 @@ describe('tui read model', () => {
 
     expect(model.emptyState?.kind).toBe('no_snapshot');
     expect(model.inventoryRows).toEqual([]);
+    expect(model.selectedInventoryIndex).toBeUndefined();
     expect(model.focusService).toBeUndefined();
   });
 

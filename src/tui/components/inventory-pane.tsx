@@ -4,7 +4,7 @@ import type { InventoryRowView } from '../types.js';
 
 export interface InventoryPaneProps {
   rows: InventoryRowView[];
-  selectedIndex: number;
+  selectedIndex?: number;
 }
 
 export function InventoryPane({ rows, selectedIndex }: InventoryPaneProps): React.JSX.Element {

@@ -1,14 +1,12 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { LogPreviewView } from '../log-preview.js';
 import type { FocusServiceView } from '../types.js';
 
 export interface FocusPaneProps {
   service: FocusServiceView | undefined;
-  logPreview?: LogPreviewView;
 }
 
-export function FocusPane({ service, logPreview }: FocusPaneProps): React.JSX.Element {
+export function FocusPane({ service }: FocusPaneProps): React.JSX.Element {
   if (!service) {
     return (
       <Box borderStyle="round" flexDirection="column" flexGrow={1} paddingX={1}>
@@ -17,6 +15,9 @@ export function FocusPane({ service, logPreview }: FocusPaneProps): React.JSX.El
       </Box>
     );
   }
+
+  const logPreview =
+    service.logPreview?.containerName === service.containerName ? service.logPreview : undefined;
 
   return (
     <Box borderStyle="round" flexDirection="column" flexGrow={1} paddingX={1}>
