@@ -4,15 +4,29 @@ export interface DockerLogsResult {
   stdout: string;
 }
 
-export type DockerLogsRunner = (command: string, args: string[]) => Promise<DockerLogsResult>;
+export interface DockerLogsRunOptions {
+  signal?: AbortSignal;
+}
+
+export interface ReadDockerContainerLogsOptions {
+  signal?: AbortSignal;
+}
+
+export type DockerLogsRunner = (
+  command: string,
+  args: string[],
+  options?: DockerLogsRunOptions,
+) => Promise<DockerLogsResult>;
 
 export interface DockerContainerLogsOptions {
   run?: DockerLogsRunner;
   defaultTailLines?: number;
 }
 
-const defaultRunner: DockerLogsRunner = async (command, args) => {
-  const result = await execa(command, args);
+const defaultRunner: DockerLogsRunner = async (command, args, options) => {
+  const result = await execa(command, args, {
+    cancelSignal: options?.signal,
+  });
   return { stdout: result.stdout };
 };
 
@@ -48,9 +62,11 @@ export function createDockerContainerLogsTool(options: DockerContainerLogsOption
   const run = options.run ?? defaultRunner;
   const defaultTailLines = options.defaultTailLines ?? 200;
 
-  return async (name: string, lines = defaultTailLines): Promise<string> => {
+  return async (name: string, lines = defaultTailLines, options?: ReadDockerContainerLogsOptions): Promise<string> => {
     try {
-      const result = await run('docker', ['logs', '--tail', String(lines), name]);
+      const result = await run('docker', ['logs', '--tail', String(lines), name], {
+        signal: options?.signal,
+      });
       return result.stdout;
     } catch (error) {
       if (isDockerMissing(error)) {

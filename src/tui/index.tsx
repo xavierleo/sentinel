@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { render, useApp, useInput } from 'ink';
 import type { PersistedSnapshotRead } from '../storage/types.js';
 import { defaultConfig } from '../config/defaults.js';
-import { createDockerContainerLogsTool } from '../tools/containers.js';
+import {
+  createDockerContainerLogsTool,
+  type ReadDockerContainerLogsOptions,
+} from '../tools/containers.js';
 import { SentinelTuiApp } from './app.js';
 import { reduceKeyPress } from './keyboard.js';
 import { buildLogPreview, type LogPreviewView } from './log-preview.js';
@@ -20,7 +23,7 @@ interface SentinelTuiRuntimeProps {
   previewLines: number;
   reader: SnapshotStateReader;
   refreshIntervalMs: number;
-  readLogs: (containerName: string, lines: number) => Promise<string>;
+  readLogs: (containerName: string, lines: number, options?: ReadDockerContainerLogsOptions) => Promise<string>;
 }
 
 function parseDurationMs(value: string): number {
@@ -79,7 +82,7 @@ function applyReadError(model: TuiReadModel, readError: string | undefined): Tui
   };
 }
 
-function SentinelTuiRuntime({
+export function SentinelTuiRuntime({
   initialSnapshot,
   pollIntervalMs,
   previewLines,
@@ -161,6 +164,7 @@ function SentinelTuiRuntime({
     }
 
     let cancelled = false;
+    const controller = new AbortController();
 
     setLogPreview(
       buildLogPreview({
@@ -172,7 +176,7 @@ function SentinelTuiRuntime({
       }),
     );
 
-    void readLogs(containerName, previewLines)
+    void readLogs(containerName, previewLines, { signal: controller.signal })
       .then((stdout) => {
         if (cancelled) {
           return;
@@ -205,6 +209,7 @@ function SentinelTuiRuntime({
 
     return () => {
       cancelled = true;
+      controller.abort(new Error(`Log preview request cancelled for ${containerName}.`));
     };
   }, [logRefreshTick, model.focusService?.containerName, previewLines, readLogs]);
 
