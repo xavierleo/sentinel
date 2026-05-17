@@ -16,10 +16,17 @@ describe('tui keyboard reducer', () => {
       shouldRefresh: false,
       shouldQuit: false,
     });
+
+    expect(reduceKeyPress({ selectedIndex: 2, helpOpen: false }, 'j', 3).selectedIndex).toBe(2);
+    expect(reduceKeyPress({ selectedIndex: 0, helpOpen: false }, 'k', 3).selectedIndex).toBe(0);
   });
 
   it('toggles help and handles refresh and quit', () => {
-    expect(reduceKeyPress({ selectedIndex: 0, helpOpen: false }, '?', 3).helpOpen).toBe(true);
+    const opened = reduceKeyPress({ selectedIndex: 0, helpOpen: false }, '?', 3);
+    const closed = reduceKeyPress({ selectedIndex: 0, helpOpen: true }, '?', 3);
+
+    expect(opened.helpOpen).toBe(true);
+    expect(closed.helpOpen).toBe(false);
     expect(reduceKeyPress({ selectedIndex: 0, helpOpen: false }, 'r', 3).shouldRefresh).toBe(true);
     expect(reduceKeyPress({ selectedIndex: 0, helpOpen: false }, 'q', 3).shouldQuit).toBe(true);
   });
