@@ -4,6 +4,7 @@ export type PermissionDecision = 'allow' | 'deny' | 'ask';
 
 export interface PermissionRequest {
   toolName: string;
+  input?: unknown;
   annotations: ToolAnnotations;
 }
 

@@ -8,6 +8,12 @@ const containerListSchema = z.object({
   filter: z.string().optional(),
 });
 
+const containerActionSchema = z.object({
+  name: z.string().min(1),
+  action: z.enum(['start', 'stop', 'restart', 'remove', 'pause', 'unpause']),
+  dry_run: z.boolean().default(true),
+});
+
 export interface ContainerSummary {
   id: string;
   name: string;
@@ -59,6 +65,40 @@ export function createContainerListTool(options: { execa?: ExecaLike } = {}): To
         }));
 
       return { containers };
+    },
+  };
+}
+
+export function createContainerActionTool(options: { execa?: ExecaLike } = {}): ToolDefinition<
+  z.input<typeof containerActionSchema>,
+  { name: string; action: string; dryRun: boolean; executed: boolean }
+> {
+  const execa = options.execa ?? defaultExeca;
+
+  return {
+    name: 'container_action',
+    description: 'Perform a Docker container lifecycle action. Defaults to dry-run and requires permission for execution.',
+    schema: containerActionSchema,
+    annotations: { destructive: true, idempotent: false },
+    async execute(args) {
+      const parsed = containerActionSchema.parse(args);
+      if (parsed.dry_run) {
+        return {
+          name: parsed.name,
+          action: parsed.action,
+          dryRun: true,
+          executed: false,
+        };
+      }
+
+      await execa('docker', [parsed.action, parsed.name]);
+
+      return {
+        name: parsed.name,
+        action: parsed.action,
+        dryRun: false,
+        executed: true,
+      };
     },
   };
 }

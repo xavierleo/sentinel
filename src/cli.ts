@@ -1,37 +1,93 @@
 import { Command } from 'commander';
+import { mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { runAgentTurn } from './agent/loop.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
-import { createPermissionEngineV0 } from './permissions/engine.js';
+import { createDefaultPermissionEngine } from './permissions/engine.js';
+import { createYamlPermissionEngine } from './permissions/rules.js';
+import { createAuditRepository } from './storage/audit.js';
+import { createStateDatabase } from './storage/database.js';
 import { createDefaultToolRegistry } from './tools/index.js';
 
-export const versionLabel = 'Sentinel v2.0 Milestone 1';
+export const versionLabel = 'Sentinel v2.0 Milestone 2';
+
+export interface CliConfirmationRequest {
+  toolName: string;
+  input: unknown;
+  reason: string;
+}
 
 export interface CliIo {
   stdout: (message: string) => void;
   stderr: (message: string) => void;
+  confirmTool?: (request: CliConfirmationRequest) => Promise<boolean>;
+}
+
+export interface CliRunContext {
+  confirmTool: (request: CliConfirmationRequest) => Promise<boolean>;
 }
 
 export interface CliDependencies {
-  runAgent: (message: string) => Promise<string>;
+  runAgent: (message: string, context: CliRunContext) => Promise<string>;
 }
 
 const defaultIo: CliIo = {
   stdout: (message) => console.log(message),
   stderr: (message) => console.error(message),
+  async confirmTool(request) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = await rl.question(
+        `Approve ${request.toolName} ${JSON.stringify(request.input)}? ${request.reason} [y/N] `,
+      );
+      return answer.trim().toLowerCase() === 'y';
+    } finally {
+      rl.close();
+    }
+  },
 };
 
-function createDefaultDependencies(): CliDependencies {
-  return {
-    async runAgent(message) {
-      const tools = createDefaultToolRegistry();
-      const result = await runAgentTurn({
-        message,
-        tools,
-        permissions: createPermissionEngineV0(),
-        model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
-      });
+function stateDbPath(): string {
+  return process.env.SENTINEL_DB_PATH ?? join(homedir(), '.sentinel', 'sentinel.db');
+}
 
-      return result.text;
+async function createPermissionEngine() {
+  if (process.env.SENTINEL_PERMISSIONS_PATH) {
+    return createYamlPermissionEngine({ rulesPath: process.env.SENTINEL_PERMISSIONS_PATH });
+  }
+
+  return createDefaultPermissionEngine();
+}
+
+function createDefaultDependencies(io: CliIo): CliDependencies {
+  return {
+    async runAgent(message, context) {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      const tools = createDefaultToolRegistry();
+
+      try {
+        const result = await runAgentTurn({
+          message,
+          tools,
+          permissions: await createPermissionEngine(),
+          audit: createAuditRepository(db),
+          confirm: ({ tool, input, permission }) =>
+            context.confirmTool({
+              toolName: tool.name,
+              input,
+              reason: permission.reason,
+            }),
+          model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
+        });
+
+        return result.text;
+      } finally {
+        db.close();
+      }
     },
   };
 }
@@ -48,7 +104,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .command('status')
     .description('Show local Sentinel status')
     .action(() => {
-      io.stdout(['Sentinel status', 'Milestone: 1 walking skeleton', 'Persistence: not implemented', 'Channels: CLI only'].join('\n'));
+      io.stdout(['Sentinel status', 'Milestone: 2 safety and persistence', 'Persistence: SQLite audit enabled', 'Channels: CLI only'].join('\n'));
     });
 
   program
@@ -68,7 +124,12 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .argument('<message...>', 'Message to send to Sentinel')
     .action(async (parts: string[]) => {
       const message = parts.join(' ').trim();
-      const response = await deps.runAgent(message);
+      const response = await deps.runAgent(message, {
+        confirmTool: async (request) => {
+          const confirm = io.confirmTool ?? defaultIo.confirmTool;
+          return confirm ? confirm(request) : false;
+        },
+      });
       io.stdout(response);
     });
 
@@ -82,7 +143,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
 }
 
 export async function runCli(argv: string[], io: CliIo = defaultIo, deps: Partial<CliDependencies> = {}): Promise<number> {
-  const resolvedDeps = { ...createDefaultDependencies(), ...deps };
+  const resolvedDeps = { ...createDefaultDependencies(io), ...deps };
   const program = createProgram(io, resolvedDeps);
 
   try {
