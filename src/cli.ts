@@ -17,6 +17,8 @@ import { createInMemoryTracer } from './observability/tracer.js';
 import { runDoctor } from './ops/doctor.js';
 import { createDefaultPermissionEngine } from './permissions/engine.js';
 import { createYamlPermissionEngine } from './permissions/rules.js';
+import { createSessionLockManager } from './sessions/lock-manager.js';
+import { createSessionRepository } from './sessions/repository.js';
 import { createAuditRepository } from './storage/audit.js';
 import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
@@ -80,42 +82,49 @@ async function createPermissionEngine() {
 }
 
 function createDefaultDependencies(io: CliIo): CliDependencies {
+  const locks = createSessionLockManager();
+
   const runAgent: CliDependencies['runAgent'] = async (message, context) => {
-    const dbPath = stateDbPath();
-    await mkdir(dirname(dbPath), { recursive: true });
-    const db = createStateDatabase(dbPath);
-    const memory = createMemoryRepository(db);
-    const tools = createDefaultToolRegistry({ memory });
+    const sessionId = context.inbound?.sessionId ?? 'cli:local:default';
+    return locks.withSessionLock(sessionId, async () => {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      const memory = createMemoryRepository(db);
+      const sessions = createSessionRepository(db);
+      const tools = createDefaultToolRegistry({ memory });
 
-    try {
-      const result = await runAgentTurn({
-        message,
-        tools,
-        permissions: await createPermissionEngine(),
-        audit: createAuditRepository(db),
-        memorySummary: memory.summarizeInventory(),
-        sessionId: context.inbound?.sessionId,
-        tracer: createInMemoryTracer(),
-        reflection: {
-          summarize: async ({ userMessage, finalText }) =>
-            userMessage.trim() && finalText.trim() ? `Turn answered: ${userMessage}` : undefined,
-          recordNote: async (body) => {
-            memory.addNote({ body, tags: ['reflection'] });
+      try {
+        const result = await runAgentTurn({
+          message,
+          tools,
+          permissions: await createPermissionEngine(),
+          audit: createAuditRepository(db),
+          memorySummary: memory.summarizeInventory(),
+          sessionId,
+          sessions,
+          tracer: createInMemoryTracer(),
+          reflection: {
+            summarize: async ({ userMessage, finalText }) =>
+              userMessage.trim() && finalText.trim() ? `Turn answered: ${userMessage}` : undefined,
+            recordNote: async (body) => {
+              memory.addNote({ body, tags: ['reflection'] });
+            },
           },
-        },
-        confirm: ({ tool, input, permission }) =>
-          context.confirmTool({
-            toolName: tool.name,
-            input,
-            reason: permission.reason,
-          }),
-        model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
-      });
+          confirm: ({ tool, input, permission }) =>
+            context.confirmTool({
+              toolName: tool.name,
+              input,
+              reason: permission.reason,
+            }),
+          model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
+        });
 
-      return result.text;
-    } finally {
-      db.close();
-    }
+        return result.text;
+      } finally {
+        db.close();
+      }
+    });
   };
 
   const refreshMemory: CliDependencies['refreshMemory'] = async () => {
