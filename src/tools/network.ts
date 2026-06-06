@@ -7,6 +7,12 @@ import type { ToolDefinition } from './types.js';
 
 type ExecaLike = (file: string, args: string[]) => Promise<{ stdout: string }>;
 type ResolveLike = (name: string, type: DnsRecordType) => Promise<string[]>;
+type FetchLike = (url: string, init: { method: string; headers?: Record<string, string>; body?: string }) => Promise<{
+  status: number;
+  statusText: string;
+  headers: Headers;
+  text: () => Promise<string>;
+}>;
 type ProbeLike = (options: { host: string; port: number; timeoutMs: number }) => Promise<{
   connected: boolean;
   latencyMs: number;
@@ -25,6 +31,13 @@ const netProbeSchema = z.object({
 const netDnsSchema = z.object({
   name: z.string().min(1),
   type: z.enum(dnsRecordTypes).default('A'),
+});
+
+const netHttpSchema = z.object({
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).default('GET'),
+  url: z.string().url(),
+  headers: z.record(z.string()).optional(),
+  body: z.string().optional(),
 });
 
 const emptySchema = z.object({});
@@ -57,6 +70,50 @@ function defaultTcpProbe(options: { host: string; port: number; timeoutMs: numbe
 
 function normalizeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function defaultHttpAllowlist(): string[] {
+  return (process.env.SENTINEL_HTTP_ALLOWLIST ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function isAllowedUrl(url: string, allowlist: string[]): boolean {
+  const parsed = new URL(url);
+  return allowlist.some((entry) => {
+    const allowed = new URL(entry);
+    return allowed.origin === parsed.origin;
+  });
+}
+
+function headersToObject(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+function truncateBody(body: string, maxBodyBytes: number): { body: string; truncated: boolean } {
+  const bytes = Buffer.from(body, 'utf8');
+  if (bytes.byteLength <= maxBodyBytes) {
+    return { body, truncated: false };
+  }
+
+  return {
+    body: bytes.subarray(0, maxBodyBytes).toString('utf8'),
+    truncated: true,
+  };
+}
+
+function wrapUntrustedHttpBody(body: string, truncated: boolean): string {
+  return [
+    '<untrusted_http_response>',
+    body,
+    ...(truncated ? ['[truncated]'] : []),
+    '</untrusted_http_response>',
+  ].join('\n');
 }
 
 function flattenDnsRecords(records: unknown[]): string[] {
@@ -197,6 +254,60 @@ export function createNetDnsTool(options: { resolve?: ResolveLike } = {}): ToolD
         name: parsed.name,
         type: parsed.type,
         records: flattenDnsRecords(records),
+      };
+    },
+  };
+}
+
+export function createNetHttpTool(options: {
+  fetch?: FetchLike;
+  allowlist?: string[];
+  maxBodyBytes?: number;
+} = {}): ToolDefinition<
+  z.input<typeof netHttpSchema>,
+  | {
+      url: string;
+      status: number;
+      statusText: string;
+      headers: Record<string, string>;
+      body: string;
+      truncated: boolean;
+    }
+  | { error: string; suggestion: string }
+> {
+  const fetch = options.fetch ?? (globalThis.fetch as FetchLike);
+  const allowlist = options.allowlist ?? defaultHttpAllowlist();
+  const maxBodyBytes = options.maxBodyBytes ?? 4096;
+
+  return {
+    name: 'net_http',
+    description: 'Send an allowlisted HTTP request and return the response body wrapped as untrusted data.',
+    schema: netHttpSchema,
+    annotations: { readOnly: true, network: true },
+    async execute(args) {
+      const parsed = netHttpSchema.parse(args);
+      if (!isAllowedUrl(parsed.url, allowlist)) {
+        return {
+          error: 'URL is not allowed',
+          suggestion: 'Add the URL origin to the network HTTP allowlist before retrying.',
+        };
+      }
+
+      const response = await fetch(parsed.url, {
+        method: parsed.method,
+        headers: parsed.headers,
+        body: parsed.body,
+      });
+      const text = await response.text();
+      const truncated = truncateBody(text, maxBodyBytes);
+
+      return {
+        url: parsed.url,
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersToObject(response.headers),
+        body: wrapUntrustedHttpBody(truncated.body, truncated.truncated),
+        truncated: truncated.truncated,
       };
     },
   };

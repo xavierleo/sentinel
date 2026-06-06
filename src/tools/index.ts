@@ -16,6 +16,7 @@ import {
 } from './fs.js';
 import {
   createNetDnsTool,
+  createNetHttpTool,
   createNetListeningPortsTool,
   createNetProbeTool,
   createNetRoutesTool,
@@ -40,6 +41,7 @@ export function createDefaultToolRegistry(options: { memory?: MemoryRepository }
   registry.register(createFsWriteTool());
   registry.register(createNetProbeTool());
   registry.register(createNetDnsTool());
+  registry.register(createNetHttpTool());
   registry.register(createNetListeningPortsTool());
   registry.register(createNetRoutesTool());
   registry.register(createContainerListTool());
