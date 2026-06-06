@@ -37,7 +37,7 @@ export function createAuditRepository(db: StateDatabase, options: { now?: () => 
       permission_reason
     ) values (?, ?, 'tool_call', ?, ?, ?, ?)
   `);
-  const list = db.prepare('select * from audit_events order by id');
+  const list = db.prepare('select * from audit_events order by id desc limit ?');
 
   return {
     recordToolAttempt(event: ToolAuditAttempt): number {
@@ -52,8 +52,8 @@ export function createAuditRepository(db: StateDatabase, options: { now?: () => 
       return Number(result.lastInsertRowid);
     },
 
-    listEvents(): AuditEventRead[] {
-      return list.all().map((row) => {
+    listEvents(options: { limit?: number } = {}): AuditEventRead[] {
+      return list.all(options.limit ?? 50).reverse().map((row) => {
         const event = row as {
           id: number;
           session_id: string;

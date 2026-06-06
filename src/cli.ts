@@ -62,6 +62,7 @@ export interface CliDependencies {
   startTelegram: () => Promise<void>;
   summarizeCost: () => Promise<string>;
   replaySession: (sessionId: string) => Promise<string>;
+  listAuditLogs: (limit: number) => Promise<string>;
   runDoctor: () => Promise<string>;
   startDaemon: () => Promise<void>;
   listPermissions: () => Promise<string>;
@@ -155,6 +156,24 @@ function formatMemoryEntity(entity: ReturnType<MemoryRepository['getEntity']>, e
     `lastSeenAt: ${entity.lastSeenAt}`,
     ...(attrs.length > 0 ? ['attrs:', ...attrs.map(([key, value]) => `- ${key}: ${value}`)] : ['attrs: none']),
     ...(entity.notes.length > 0 ? ['notes:', ...entity.notes.map((note) => `- #${note.id} ${note.body}`)] : ['notes: none']),
+  ].join('\n');
+}
+
+function formatAuditLogs(events: ReturnType<ReturnType<typeof createAuditRepository>['listEvents']>): string {
+  if (events.length === 0) {
+    return 'Audit log: empty';
+  }
+
+  return [
+    'Audit log:',
+    ...events.map((event) =>
+      [
+        `- #${event.id} ${new Date(event.timestamp).toISOString()} ${event.sessionId}`,
+        `  tool: ${event.toolName}`,
+        `  permission: ${event.permissionDecision} (${event.permissionReason})`,
+        `  input: ${JSON.stringify(event.input)}`,
+      ].join('\n'),
+    ),
   ].join('\n');
 }
 
@@ -387,6 +406,19 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       }
     },
 
+    async listAuditLogs(limit) {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      const audit = createAuditRepository(db);
+
+      try {
+        return formatAuditLogs(audit.listEvents({ limit }));
+      } finally {
+        db.close();
+      }
+    },
+
     async runDoctor() {
       const result = await runDoctor({
         checks: {
@@ -472,6 +504,19 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .argument('<session_id>', 'Session id to replay')
     .action(async (sessionId: string) => {
       io.stdout(await deps.replaySession(sessionId));
+    });
+
+  program
+    .command('logs')
+    .description('Print recent audit log events')
+    .option('--limit <count>', 'Number of events to print', '50')
+    .action(async (options: { limit: string }) => {
+      const limit = Number.parseInt(options.limit, 10);
+      if (!Number.isFinite(limit) || limit <= 0) {
+        throw new Error('Log limit must be a positive integer');
+      }
+
+      io.stdout(await deps.listAuditLogs(limit));
     });
 
   program
