@@ -22,6 +22,12 @@ import {
   createNetRoutesTool,
 } from './network.js';
 import {
+  createShellExecTool,
+  createSystemdActionTool,
+  createSystemdListUnitsTool,
+  createSystemdStatusTool,
+} from './process.js';
+import {
   createMemoryGetTool,
   createMemoryNoteTool,
   createMemoryRememberTool,
@@ -33,6 +39,10 @@ import type { MemoryRepository } from '../memory/repository.js';
 
 export function createDefaultToolRegistry(options: { memory?: MemoryRepository } = {}) {
   const registry = createToolRegistry();
+  registry.register(createShellExecTool());
+  registry.register(createSystemdListUnitsTool());
+  registry.register(createSystemdStatusTool());
+  registry.register(createSystemdActionTool());
   registry.register(createFsListTool());
   registry.register(createFsReadTool());
   registry.register(createFsStatTool());
