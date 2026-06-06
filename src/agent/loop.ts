@@ -1,6 +1,7 @@
 import type { ModelClient, ModelMessage } from '../model/types.js';
 import type { Tracer } from '../observability/tracer.js';
 import type { PermissionEngine, PermissionResult } from '../permissions/types.js';
+import type { SessionRepository } from '../sessions/repository.js';
 import type { AuditSink } from '../storage/audit.js';
 import type { ToolDefinition } from '../tools/types.js';
 import type { ToolRegistry } from '../tools/types.js';
@@ -13,6 +14,7 @@ export interface RunAgentTurnOptions {
   confirm?: (request: ConfirmationRequest) => Promise<boolean>;
   audit?: AuditSink;
   sessionId?: string;
+  sessions?: SessionRepository;
   memorySummary?: string;
   tracer?: Tracer;
   reflection?: ReflectionSink;
@@ -51,6 +53,14 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
 
 async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurnResult> {
   const maxSteps = options.maxSteps ?? 8;
+  const sessionId = options.sessionId ?? 'cli:local:default';
+  const stepId = `${Date.now()}`;
+  if (options.sessions) {
+    const [channel = 'cli', userId = 'local'] = sessionId.split(':');
+    options.sessions.ensureSession({ id: sessionId, channel, userId });
+    options.sessions.appendMessage({ sessionId, role: 'user', content: options.message });
+    options.sessions.markStepStarted({ sessionId, stepId });
+  }
   const messages: ModelMessage[] = [
     ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
     { role: 'user', content: options.message },
@@ -73,6 +83,8 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
           await options.reflection.recordNote(note.trim());
         }
       }
+      options.sessions?.appendMessage({ sessionId, role: 'assistant', content: result.text });
+      options.sessions?.markStepCompleted({ sessionId, stepId });
       return { text: result.text, steps: step };
     }
 
