@@ -90,6 +90,16 @@ const migrations = [
       );
     `,
   },
+  {
+    version: 4,
+    sql: `
+      create table if not exists preferences (
+        key text primary key,
+        value text not null,
+        updated_at integer not null
+      );
+    `,
+  },
 ];
 
 export function createStateDatabase(path: string): StateDatabase {

@@ -15,6 +15,7 @@ export interface RunAgentTurnOptions {
   sessionId?: string;
   memorySummary?: string;
   tracer?: Tracer;
+  reflection?: ReflectionSink;
   maxSteps?: number;
 }
 
@@ -22,6 +23,11 @@ export interface ConfirmationRequest {
   tool: ToolDefinition;
   input: unknown;
   permission: PermissionResult;
+}
+
+export interface ReflectionSink {
+  summarize: (result: { userMessage: string; finalText: string }) => Promise<string | undefined>;
+  recordNote: (body: string) => Promise<void>;
 }
 
 export interface AgentTurnResult {
@@ -61,6 +67,12 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
       : await modelCall();
 
     if (result.type === 'text') {
+      if (options.reflection) {
+        const note = await options.reflection.summarize({ userMessage: options.message, finalText: result.text });
+        if (note?.trim()) {
+          await options.reflection.recordNote(note.trim());
+        }
+      }
       return { text: result.text, steps: step };
     }
 
