@@ -38,7 +38,7 @@ import { createToolRegistry } from './registry.js';
 import type { MemoryRepository } from '../memory/repository.js';
 
 export function createDefaultToolRegistry(options: { memory?: MemoryRepository } = {}) {
-  const registry = createToolRegistry();
+  const registry = createToolRegistry({ structuredErrors: true });
   registry.register(createShellExecTool());
   registry.register(createSystemdListUnitsTool());
   registry.register(createSystemdStatusTool());
