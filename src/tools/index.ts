@@ -1,4 +1,10 @@
-import { createContainerActionTool, createContainerListTool } from './container.js';
+import {
+  createContainerActionTool,
+  createContainerInspectTool,
+  createContainerListTool,
+  createContainerLogsTool,
+  createContainerStatsTool,
+} from './container.js';
 import { createDiscoverNetworkTool, createDiscoverServicesTool, createDiscoverVolumesTool } from './discovery.js';
 import { createFsListTool, createFsReadTool } from './fs.js';
 import {
@@ -16,6 +22,9 @@ export function createDefaultToolRegistry(options: { memory?: MemoryRepository }
   registry.register(createFsListTool());
   registry.register(createFsReadTool());
   registry.register(createContainerListTool());
+  registry.register(createContainerInspectTool());
+  registry.register(createContainerLogsTool());
+  registry.register(createContainerStatsTool());
   registry.register(createContainerActionTool());
   registry.register(createDiscoverServicesTool());
   registry.register(createDiscoverVolumesTool());
