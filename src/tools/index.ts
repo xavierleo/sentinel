@@ -6,7 +6,14 @@ import {
   createContainerStatsTool,
 } from './container.js';
 import { createDiscoverNetworkTool, createDiscoverServicesTool, createDiscoverVolumesTool } from './discovery.js';
-import { createFsListTool, createFsReadTool } from './fs.js';
+import {
+  createFsDiskUsageTool,
+  createFsListTool,
+  createFsReadTool,
+  createFsSearchTool,
+  createFsStatTool,
+  createFsWriteTool,
+} from './fs.js';
 import {
   createMemoryGetTool,
   createMemoryNoteTool,
@@ -21,6 +28,10 @@ export function createDefaultToolRegistry(options: { memory?: MemoryRepository }
   const registry = createToolRegistry();
   registry.register(createFsListTool());
   registry.register(createFsReadTool());
+  registry.register(createFsStatTool());
+  registry.register(createFsSearchTool());
+  registry.register(createFsDiskUsageTool());
+  registry.register(createFsWriteTool());
   registry.register(createContainerListTool());
   registry.register(createContainerInspectTool());
   registry.register(createContainerLogsTool());
