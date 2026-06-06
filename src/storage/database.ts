@@ -65,6 +65,31 @@ const migrations = [
       create virtual table if not exists notes_fts using fts5(body, tags, content='notes');
     `,
   },
+  {
+    version: 3,
+    sql: `
+      create table if not exists cost_ledger (
+        id integer primary key autoincrement,
+        session_id text not null,
+        timestamp integer not null,
+        provider text not null,
+        model text not null,
+        tokens_in integer not null,
+        tokens_out integer not null,
+        cached_tokens_in integer not null,
+        cost_usd real not null
+      );
+
+      create table if not exists events (
+        id integer primary key autoincrement,
+        session_id text not null,
+        timestamp integer not null,
+        actor text not null,
+        kind text not null,
+        payload text not null
+      );
+    `,
+  },
 ];
 
 export function createStateDatabase(path: string): StateDatabase {

@@ -1,4 +1,5 @@
 import type { ModelClient, ModelMessage } from '../model/types.js';
+import type { Tracer } from '../observability/tracer.js';
 import type { PermissionEngine, PermissionResult } from '../permissions/types.js';
 import type { AuditSink } from '../storage/audit.js';
 import type { ToolDefinition } from '../tools/types.js';
@@ -13,6 +14,7 @@ export interface RunAgentTurnOptions {
   audit?: AuditSink;
   sessionId?: string;
   memorySummary?: string;
+  tracer?: Tracer;
   maxSteps?: number;
 }
 
@@ -32,6 +34,16 @@ function stringifyObservation(value: unknown): string {
 }
 
 export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurnResult> {
+  if (options.tracer) {
+    return options.tracer.withSpan('turn', { sessionId: options.sessionId ?? 'cli:local:default' }, () =>
+      executeAgentTurn(options),
+    );
+  }
+
+  return executeAgentTurn(options);
+}
+
+async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurnResult> {
   const maxSteps = options.maxSteps ?? 8;
   const messages: ModelMessage[] = [
     ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
@@ -39,10 +51,14 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
   ];
 
   for (let step = 1; step <= maxSteps; step += 1) {
-    const result = await options.model.completeTurn({
-      messages,
-      tools: options.tools.listForModel(),
-    });
+    const modelCall = () =>
+      options.model.completeTurn({
+        messages,
+        tools: options.tools.listForModel(),
+      });
+    const result = options.tracer
+      ? await options.tracer.withSpan('model_call', { step }, modelCall)
+      : await modelCall();
 
     if (result.type === 'text') {
       return { text: result.text, steps: step };
@@ -90,7 +106,10 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
       }
     }
 
-    const observation = await options.tools.dispatch(result.name, result.input);
+    const dispatch = () => options.tools.dispatch(result.name, result.input);
+    const observation = options.tracer
+      ? await options.tracer.withSpan('tool_dispatch', { toolName: result.name }, dispatch)
+      : await dispatch();
     messages.push({
       role: 'tool',
       content: stringifyObservation(observation),
