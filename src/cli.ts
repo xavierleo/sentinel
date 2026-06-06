@@ -4,6 +4,8 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { runAgentTurn } from './agent/loop.js';
+import type { ChannelRunner, InboundRunContext } from './channels/types.js';
+import { createGrammyTelegramChannel } from './channels/telegram.js';
 import { refreshContainerInventory } from './memory/inventory-refresh.js';
 import { createMemoryRepository } from './memory/repository.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
@@ -14,7 +16,7 @@ import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
 
-export const versionLabel = 'Sentinel v2.0 Milestone 3';
+export const versionLabel = 'Sentinel v2.0 Milestone 4';
 
 export interface CliConfirmationRequest {
   toolName: string;
@@ -30,11 +32,13 @@ export interface CliIo {
 
 export interface CliRunContext {
   confirmTool: (request: CliConfirmationRequest) => Promise<boolean>;
+  inbound?: InboundRunContext;
 }
 
 export interface CliDependencies {
   runAgent: (message: string, context: CliRunContext) => Promise<string>;
   refreshMemory: () => Promise<string>;
+  startTelegram: () => Promise<void>;
 }
 
 const defaultIo: CliIo = {
@@ -66,35 +70,38 @@ async function createPermissionEngine() {
 }
 
 function createDefaultDependencies(io: CliIo): CliDependencies {
+  const runAgent: CliDependencies['runAgent'] = async (message, context) => {
+    const dbPath = stateDbPath();
+    await mkdir(dirname(dbPath), { recursive: true });
+    const db = createStateDatabase(dbPath);
+    const memory = createMemoryRepository(db);
+    const tools = createDefaultToolRegistry({ memory });
+
+    try {
+      const result = await runAgentTurn({
+        message,
+        tools,
+        permissions: await createPermissionEngine(),
+        audit: createAuditRepository(db),
+        memorySummary: memory.summarizeInventory(),
+        sessionId: context.inbound?.sessionId,
+        confirm: ({ tool, input, permission }) =>
+          context.confirmTool({
+            toolName: tool.name,
+            input,
+            reason: permission.reason,
+          }),
+        model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
+      });
+
+      return result.text;
+    } finally {
+      db.close();
+    }
+  };
+
   return {
-    async runAgent(message, context) {
-      const dbPath = stateDbPath();
-      await mkdir(dirname(dbPath), { recursive: true });
-      const db = createStateDatabase(dbPath);
-      const memory = createMemoryRepository(db);
-      const tools = createDefaultToolRegistry({ memory });
-
-      try {
-        const result = await runAgentTurn({
-          message,
-          tools,
-          permissions: await createPermissionEngine(),
-          audit: createAuditRepository(db),
-          memorySummary: memory.summarizeInventory(),
-          confirm: ({ tool, input, permission }) =>
-            context.confirmTool({
-              toolName: tool.name,
-              input,
-              reason: permission.reason,
-            }),
-          model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
-        });
-
-        return result.text;
-      } finally {
-        db.close();
-      }
-    },
+    runAgent,
 
     async refreshMemory() {
       const dbPath = stateDbPath();
@@ -114,6 +121,22 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         db.close();
       }
     },
+
+    async startTelegram() {
+      const runner: ChannelRunner = (message, inbound) =>
+        runAgent(message, {
+          inbound,
+          confirmTool: inbound.confirmTool ?? (async () => false),
+        });
+      const channel = createGrammyTelegramChannel({
+        token: process.env.TELEGRAM_BOT_TOKEN,
+        authorizedUserId: process.env.TELEGRAM_USER_ID ? Number(process.env.TELEGRAM_USER_ID) : undefined,
+        runAgent: runner,
+      });
+
+      io.stdout('Telegram channel started');
+      await channel.start?.();
+    },
   };
 }
 
@@ -129,7 +152,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .command('status')
     .description('Show local Sentinel status')
     .action(() => {
-      io.stdout(['Sentinel status', 'Milestone: 3 memory v1', 'Persistence: SQLite memory and audit enabled', 'Channels: CLI only'].join('\n'));
+      io.stdout(['Sentinel status', 'Milestone: 4 Telegram channel', 'Persistence: SQLite memory and audit enabled', 'Channels: CLI and Telegram'].join('\n'));
     });
 
   program
@@ -141,6 +164,13 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
         .map((tool) => tool.name)
         .sort();
       io.stdout(names.join('\n'));
+    });
+
+  program
+    .command('telegram')
+    .description('Start Telegram channel')
+    .action(async () => {
+      await deps.startTelegram();
     });
 
   program
@@ -162,6 +192,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .action(async (parts: string[]) => {
       const message = parts.join(' ').trim();
       const response = await deps.runAgent(message, {
+        inbound: { channel: 'cli', userId: 'local', sessionId: 'cli:local:default' },
         confirmTool: async (request) => {
           const confirm = io.confirmTool ?? defaultIo.confirmTool;
           return confirm ? confirm(request) : false;
