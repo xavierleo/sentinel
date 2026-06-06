@@ -2,19 +2,28 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { ModelClient, ModelMessage, ModelTurnResult } from './types.js';
 
 function toAnthropicMessages(messages: ModelMessage[]): Anthropic.Messages.MessageParam[] {
-  return messages.map((message) => {
-    if (message.role === 'tool') {
-      return {
-        role: 'user',
-        content: `Tool observation:\n${message.content}`,
-      };
+  const converted: Anthropic.Messages.MessageParam[] = [];
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      continue;
     }
 
-    return {
+    if (message.role === 'tool') {
+      converted.push({
+        role: 'user',
+        content: `Tool observation:\n${message.content}`,
+      });
+      continue;
+    }
+
+    converted.push({
       role: message.role,
       content: message.content,
-    };
-  });
+    });
+  }
+
+  return converted;
 }
 
 export function createAnthropicModelClient(options: {
@@ -35,6 +44,10 @@ export function createAnthropicModelClient(options: {
       const response = await client.messages.create({
         model,
         max_tokens: maxTokens,
+        system: request.messages
+          .filter((message) => message.role === 'system')
+          .map((message) => message.content)
+          .join('\n\n'),
         messages: toAnthropicMessages(request.messages),
         tools: request.tools.map((tool) => ({
           name: tool.name,

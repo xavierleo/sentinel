@@ -31,6 +31,40 @@ const migrations = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `
+      create table if not exists entities (
+        id text primary key,
+        kind text not null,
+        name text not null,
+        first_seen_at integer not null,
+        last_seen_at integer not null,
+        archived_at integer
+      );
+
+      create table if not exists entity_attrs (
+        entity_id text not null references entities(id),
+        attribute text not null,
+        value text not null,
+        source text not null,
+        observed_at integer not null,
+        superseded_at integer,
+        primary key (entity_id, attribute, source)
+      );
+
+      create table if not exists notes (
+        id integer primary key autoincrement,
+        entity_id text,
+        body text not null,
+        tags text,
+        created_at integer not null,
+        obsoleted_at integer
+      );
+
+      create virtual table if not exists notes_fts using fts5(body, tags, content='notes');
+    `,
+  },
 ];
 
 export function createStateDatabase(path: string): StateDatabase {
