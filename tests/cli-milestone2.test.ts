@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runCli, type CliConfirmationRequest } from '../src/cli.js';
+import { runCli, type CliConfirmationDecision, type CliConfirmationRequest } from '../src/cli.js';
 
 function createHarness(confirm: (request: CliConfirmationRequest) => Promise<boolean>) {
   const stdout: string[] = [];
@@ -24,7 +24,7 @@ function createHarness(confirm: (request: CliConfirmationRequest) => Promise<boo
 describe('cli milestone 2 confirmation UX', () => {
   it('passes confirmation decisions through injected run dependencies', async () => {
     const harness = createHarness(async () => true);
-    let confirmationResult = false;
+    let confirmationResult: CliConfirmationDecision = false;
 
     const exitCode = await runCli(['run', 'restart sonarr'], harness.io, {
       runAgent: async (_message, context) => {
