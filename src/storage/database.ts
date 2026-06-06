@@ -100,6 +100,28 @@ const migrations = [
       );
     `,
   },
+  {
+    version: 5,
+    sql: `
+      create table if not exists session_messages (
+        id integer primary key autoincrement,
+        session_id text not null references sessions(id),
+        role text not null,
+        content text not null,
+        created_at integer not null
+      );
+
+      create table if not exists session_steps (
+        id integer primary key autoincrement,
+        session_id text not null references sessions(id),
+        step_id text not null,
+        status text not null,
+        started_at integer not null,
+        completed_at integer,
+        failed_at integer
+      );
+    `,
+  },
 ];
 
 export function createStateDatabase(path: string): StateDatabase {
