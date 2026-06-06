@@ -9,6 +9,9 @@ import { createGrammyTelegramChannel } from './channels/telegram.js';
 import { refreshContainerInventory } from './memory/inventory-refresh.js';
 import { createMemoryRepository } from './memory/repository.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
+import { createCostLedger } from './observability/cost-ledger.js';
+import { createReplayRepository } from './observability/replay.js';
+import { createInMemoryTracer } from './observability/tracer.js';
 import { createDefaultPermissionEngine } from './permissions/engine.js';
 import { createYamlPermissionEngine } from './permissions/rules.js';
 import { createAuditRepository } from './storage/audit.js';
@@ -16,7 +19,7 @@ import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
 
-export const versionLabel = 'Sentinel v2.0 Milestone 4';
+export const versionLabel = 'Sentinel v2.0 Milestone 5';
 
 export interface CliConfirmationRequest {
   toolName: string;
@@ -39,6 +42,8 @@ export interface CliDependencies {
   runAgent: (message: string, context: CliRunContext) => Promise<string>;
   refreshMemory: () => Promise<string>;
   startTelegram: () => Promise<void>;
+  summarizeCost: () => Promise<string>;
+  replaySession: (sessionId: string) => Promise<string>;
 }
 
 const defaultIo: CliIo = {
@@ -85,6 +90,7 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         audit: createAuditRepository(db),
         memorySummary: memory.summarizeInventory(),
         sessionId: context.inbound?.sessionId,
+        tracer: createInMemoryTracer(),
         confirm: ({ tool, input, permission }) =>
           context.confirmTool({
             toolName: tool.name,
@@ -137,6 +143,44 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       io.stdout('Telegram channel started');
       await channel.start?.();
     },
+
+    async summarizeCost() {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      const ledger = createCostLedger(db);
+      const now = new Date();
+      const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const to = from + 86_400_000;
+
+      try {
+        const summary = ledger.summarize({ from, to });
+        return [
+          `Cost: $${summary.costUsd.toFixed(4)} across ${summary.calls} calls`,
+          `Tokens: ${summary.tokensIn} in, ${summary.tokensOut} out, ${summary.cachedTokensIn} cached in`,
+        ].join('\n');
+      } finally {
+        db.close();
+      }
+    },
+
+    async replaySession(sessionId) {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      const replay = createReplayRepository(db);
+
+      try {
+        const events = replay.readSession(sessionId);
+        if (events.length === 0) {
+          return `No replay events for ${sessionId}`;
+        }
+
+        return events.map((event) => `${event.actor}: ${JSON.stringify(event.payload)}`).join('\n');
+      } finally {
+        db.close();
+      }
+    },
   };
 }
 
@@ -152,7 +196,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .command('status')
     .description('Show local Sentinel status')
     .action(() => {
-      io.stdout(['Sentinel status', 'Milestone: 4 Telegram channel', 'Persistence: SQLite memory and audit enabled', 'Channels: CLI and Telegram'].join('\n'));
+      io.stdout(['Sentinel status', 'Milestone: 5 observability', 'Persistence: SQLite memory, audit, cost, replay enabled', 'Channels: CLI and Telegram'].join('\n'));
     });
 
   program
@@ -164,6 +208,21 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
         .map((tool) => tool.name)
         .sort();
       io.stdout(names.join('\n'));
+    });
+
+  program
+    .command('cost')
+    .description('Show model cost summary for today')
+    .action(async () => {
+      io.stdout(await deps.summarizeCost());
+    });
+
+  program
+    .command('replay')
+    .description('Print replay events for a session')
+    .argument('<session_id>', 'Session id to replay')
+    .action(async (sessionId: string) => {
+      io.stdout(await deps.replaySession(sessionId));
     });
 
   program
