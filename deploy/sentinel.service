@@ -1,0 +1,18 @@
+[Unit]
+Description=Sentinel homelab AI harness
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=unless-stopped
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sentinel /var/log/sentinel /tmp
+WorkingDirectory=/opt/sentinel
+ExecStart=/usr/bin/docker compose -f /opt/sentinel/deploy/docker-compose.yml up
+ExecStop=/usr/bin/docker compose -f /opt/sentinel/deploy/docker-compose.yml down
+
+[Install]
+WantedBy=multi-user.target

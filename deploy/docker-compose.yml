@@ -1,0 +1,28 @@
+services:
+  sentinel:
+    image: ghcr.io/xavierleo/sentinel:latest
+    container_name: sentinel
+    restart: unless-stopped
+    user: "1500:1500"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      NODE_ENV: production
+      SENTINEL_DB_PATH: /var/lib/sentinel/sentinel.db
+      SENTINEL_PERMISSIONS_PATH: /var/lib/sentinel/permissions.yaml
+    env_file:
+      - .env
+    volumes:
+      - sentinel-state:/var/lib/sentinel
+      - sentinel-logs:/var/log/sentinel
+      - sentinel-tmp:/tmp
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["sentinel", "telegram"]
+
+volumes:
+  sentinel-state:
+  sentinel-logs:
+  sentinel-tmp:
