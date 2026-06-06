@@ -10,6 +10,7 @@ import { createHealthServer } from './daemon/health.js';
 import { createDaemonRunner } from './daemon/runner.js';
 import { refreshContainerInventory } from './memory/inventory-refresh.js';
 import { createMemoryRepository } from './memory/repository.js';
+import type { MemoryRepository } from './memory/repository.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
 import { createCostLedger } from './observability/cost-ledger.js';
 import { evaluateBudgetPolicy } from './observability/budget-policy.js';
@@ -55,6 +56,9 @@ export interface CliRunContext {
 export interface CliDependencies {
   runAgent: (message: string, context: CliRunContext) => Promise<string>;
   refreshMemory: () => Promise<string>;
+  summarizeMemory: () => Promise<string>;
+  searchMemory: (query: string) => Promise<string>;
+  getMemoryEntity: (entityId: string) => Promise<string>;
   startTelegram: () => Promise<void>;
   summarizeCost: () => Promise<string>;
   replaySession: (sessionId: string) => Promise<string>;
@@ -116,6 +120,42 @@ function formatPermissionRules(rules: { allow: string[]; deny: string[] }): stri
   const allow = rules.allow.length > 0 ? rules.allow.map((rule) => `- ${rule}`) : ['- none'];
   const deny = rules.deny.length > 0 ? rules.deny.map((rule) => `- ${rule}`) : ['- none'];
   return ['Allow rules:', ...allow, 'Deny rules:', ...deny].join('\n');
+}
+
+function formatMemorySearchResults(query: string, results: ReturnType<MemoryRepository['search']>): string {
+  if (results.length === 0) {
+    return `Search results for ${query}: none`;
+  }
+
+  return [
+    `Search results for ${query}:`,
+    ...results.map((result) =>
+      [
+        `- ${result.kind}: ${result.title}`,
+        result.entityId ? `  entity: ${result.entityId}` : undefined,
+        `  ${result.body}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ),
+  ].join('\n');
+}
+
+function formatMemoryEntity(entity: ReturnType<MemoryRepository['getEntity']>, entityId: string): string {
+  if (!entity) {
+    return `Entity ${entityId}: not found`;
+  }
+
+  const attrs = Object.entries(entity.attrs);
+  return [
+    `Entity ${entity.id}`,
+    `kind: ${entity.kind}`,
+    `name: ${entity.name}`,
+    `firstSeenAt: ${entity.firstSeenAt}`,
+    `lastSeenAt: ${entity.lastSeenAt}`,
+    ...(attrs.length > 0 ? ['attrs:', ...attrs.map(([key, value]) => `- ${key}: ${value}`)] : ['attrs: none']),
+    ...(entity.notes.length > 0 ? ['notes:', ...entity.notes.map((note) => `- #${note.id} ${note.body}`)] : ['notes: none']),
+  ].join('\n');
 }
 
 function createDefaultDependencies(io: CliIo): CliDependencies {
@@ -205,9 +245,51 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
     }
   };
 
+  const summarizeMemory: CliDependencies['summarizeMemory'] = async () => {
+    const dbPath = stateDbPath();
+    await mkdir(dirname(dbPath), { recursive: true });
+    const db = createStateDatabase(dbPath);
+    const memory = createMemoryRepository(db);
+
+    try {
+      return [memory.summarizeInventory(), memory.summarizePreferences()].join('\n\n');
+    } finally {
+      db.close();
+    }
+  };
+
+  const searchMemory: CliDependencies['searchMemory'] = async (query) => {
+    const dbPath = stateDbPath();
+    await mkdir(dirname(dbPath), { recursive: true });
+    const db = createStateDatabase(dbPath);
+    const memory = createMemoryRepository(db);
+
+    try {
+      return formatMemorySearchResults(query, memory.search({ query }));
+    } finally {
+      db.close();
+    }
+  };
+
+  const getMemoryEntity: CliDependencies['getMemoryEntity'] = async (entityId) => {
+    const dbPath = stateDbPath();
+    await mkdir(dirname(dbPath), { recursive: true });
+    const db = createStateDatabase(dbPath);
+    const memory = createMemoryRepository(db);
+
+    try {
+      return formatMemoryEntity(memory.getEntity(entityId), entityId);
+    } finally {
+      db.close();
+    }
+  };
+
   return {
     runAgent,
     refreshMemory,
+    summarizeMemory,
+    searchMemory,
+    getMemoryEntity,
 
     async startDaemon() {
       let ready = false;
@@ -442,12 +524,39 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .command('memory')
     .description('Memory operations')
     .argument('<subcommand>', 'Memory subcommand')
-    .action(async (subcommand: string) => {
-      if (subcommand !== 'refresh') {
-        throw new Error(`Unknown memory subcommand: ${subcommand}`);
+    .argument('[args...]', 'Memory subcommand arguments')
+    .action(async (subcommand: string, args: string[]) => {
+      if (subcommand === 'refresh') {
+        io.stdout(await deps.refreshMemory());
+        return;
       }
 
-      io.stdout(await deps.refreshMemory());
+      if (subcommand === 'summary') {
+        io.stdout(await deps.summarizeMemory());
+        return;
+      }
+
+      if (subcommand === 'search') {
+        const query = args.join(' ').trim();
+        if (!query) {
+          throw new Error('Missing memory search query');
+        }
+
+        io.stdout(await deps.searchMemory(query));
+        return;
+      }
+
+      if (subcommand === 'get') {
+        const entityId = args.join(' ').trim();
+        if (!entityId) {
+          throw new Error('Missing memory entity id');
+        }
+
+        io.stdout(await deps.getMemoryEntity(entityId));
+        return;
+      }
+
+      throw new Error(`Unknown memory subcommand: ${subcommand}`);
     });
 
   program
