@@ -17,7 +17,13 @@ import { createReplayRepository } from './observability/replay.js';
 import { createInMemoryTracer } from './observability/tracer.js';
 import { runDoctor } from './ops/doctor.js';
 import { createDefaultPermissionEngine } from './permissions/engine.js';
-import { createYamlPermissionEngine } from './permissions/rules.js';
+import {
+  addPermissionRule as addPermissionRuleToFile,
+  createYamlPermissionEngine,
+  listPermissionRules,
+  removePermissionRule as removePermissionRuleFromFile,
+} from './permissions/rules.js';
+import type { PermissionRuleDecision } from './permissions/rules.js';
 import { createSessionLockManager } from './sessions/lock-manager.js';
 import { createSessionRepository } from './sessions/repository.js';
 import { createAuditRepository } from './storage/audit.js';
@@ -33,14 +39,16 @@ export interface CliConfirmationRequest {
   reason: string;
 }
 
+export type CliConfirmationDecision = boolean | 'remember';
+
 export interface CliIo {
   stdout: (message: string) => void;
   stderr: (message: string) => void;
-  confirmTool?: (request: CliConfirmationRequest) => Promise<boolean>;
+  confirmTool?: (request: CliConfirmationRequest) => Promise<CliConfirmationDecision>;
 }
 
 export interface CliRunContext {
-  confirmTool: (request: CliConfirmationRequest) => Promise<boolean>;
+  confirmTool: (request: CliConfirmationRequest) => Promise<CliConfirmationDecision>;
   inbound?: InboundRunContext;
 }
 
@@ -52,6 +60,9 @@ export interface CliDependencies {
   replaySession: (sessionId: string) => Promise<string>;
   runDoctor: () => Promise<string>;
   startDaemon: () => Promise<void>;
+  listPermissions: () => Promise<string>;
+  addPermissionRule: (decision: PermissionRuleDecision, rule: string) => Promise<string>;
+  removePermissionRule: (decision: PermissionRuleDecision, rule: string) => Promise<string>;
 }
 
 const defaultIo: CliIo = {
@@ -61,9 +72,14 @@ const defaultIo: CliIo = {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     try {
       const answer = await rl.question(
-        `Approve ${request.toolName} ${JSON.stringify(request.input)}? ${request.reason} [y/N] `,
+        `Approve ${request.toolName} ${JSON.stringify(request.input)}? ${request.reason} [y/N/a] `,
       );
-      return answer.trim().toLowerCase() === 'y';
+      const normalized = answer.trim().toLowerCase();
+      if (normalized === 'a') {
+        return 'remember';
+      }
+
+      return normalized === 'y';
     } finally {
       rl.close();
     }
@@ -74,12 +90,32 @@ function stateDbPath(): string {
   return process.env.SENTINEL_DB_PATH ?? join(homedir(), '.sentinel', 'sentinel.db');
 }
 
+function permissionRulesPath(): string {
+  return process.env.SENTINEL_PERMISSIONS_PATH ?? join(homedir(), '.sentinel', 'permissions.yaml');
+}
+
 async function createPermissionEngine() {
-  if (process.env.SENTINEL_PERMISSIONS_PATH) {
-    return createYamlPermissionEngine({ rulesPath: process.env.SENTINEL_PERMISSIONS_PATH });
+  return createYamlPermissionEngine({ rulesPath: permissionRulesPath(), fallback: createDefaultPermissionEngine() });
+}
+
+function formatPermissionRule(toolName: string, input: unknown): string {
+  if (!input || typeof input !== 'object') {
+    return toolName;
   }
 
-  return createDefaultPermissionEngine();
+  const matchers = Object.entries(input as Record<string, unknown>)
+    .filter((entry): entry is [string, string | number | boolean] =>
+      ['string', 'number', 'boolean'].includes(typeof entry[1]),
+    )
+    .map(([key, value]) => `${key}=${String(value)}`);
+
+  return matchers.length > 0 ? `${toolName}(${matchers.join(', ')})` : toolName;
+}
+
+function formatPermissionRules(rules: { allow: string[]; deny: string[] }): string {
+  const allow = rules.allow.length > 0 ? rules.allow.map((rule) => `- ${rule}`) : ['- none'];
+  const deny = rules.deny.length > 0 ? rules.deny.map((rule) => `- ${rule}`) : ['- none'];
+  return ['Allow rules:', ...allow, 'Deny rules:', ...deny].join('\n');
 }
 
 function createDefaultDependencies(io: CliIo): CliDependencies {
@@ -133,6 +169,13 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
               input,
               reason: permission.reason,
             }),
+          rememberPermission: async ({ tool, input }) => {
+            await addPermissionRuleToFile({
+              rulesPath: permissionRulesPath(),
+              decision: 'allow',
+              rule: formatPermissionRule(tool.name, input),
+            });
+          },
           model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
         });
 
@@ -277,6 +320,20 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         ...result.checks.map((check) => `${check.name}: ${check.ok ? 'ok' : 'failed'} - ${check.message}`),
       ].join('\n');
     },
+
+    async listPermissions() {
+      return formatPermissionRules(await listPermissionRules({ rulesPath: permissionRulesPath() }));
+    },
+
+    async addPermissionRule(decision, rule) {
+      await addPermissionRuleToFile({ rulesPath: permissionRulesPath(), decision, rule });
+      return `Added ${decision} rule: ${rule}`;
+    },
+
+    async removePermissionRule(decision, rule) {
+      await removePermissionRuleFromFile({ rulesPath: permissionRulesPath(), decision, rule });
+      return `Removed ${decision} rule: ${rule}`;
+    },
   };
 }
 
@@ -340,6 +397,45 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .description('Start Telegram channel')
     .action(async () => {
       await deps.startTelegram();
+    });
+
+  program
+    .command('permissions')
+    .description('Manage permission rules')
+    .argument('<subcommand>', 'Permission subcommand: list, allow, deny, remove')
+    .argument('[args...]', 'Permission rule arguments')
+    .action(async (subcommand: string, args: string[]) => {
+      if (subcommand === 'list') {
+        io.stdout(await deps.listPermissions());
+        return;
+      }
+
+      if (subcommand === 'allow' || subcommand === 'deny') {
+        const rule = args.join(' ').trim();
+        if (!rule) {
+          throw new Error(`Missing ${subcommand} permission rule`);
+        }
+
+        io.stdout(await deps.addPermissionRule(subcommand, rule));
+        return;
+      }
+
+      if (subcommand === 'remove') {
+        const [decision, ...ruleParts] = args;
+        if (decision !== 'allow' && decision !== 'deny') {
+          throw new Error('Permission remove requires decision: allow or deny');
+        }
+
+        const rule = ruleParts.join(' ').trim();
+        if (!rule) {
+          throw new Error('Missing permission rule to remove');
+        }
+
+        io.stdout(await deps.removePermissionRule(decision, rule));
+        return;
+      }
+
+      throw new Error(`Unknown permissions subcommand: ${subcommand}`);
     });
 
   program

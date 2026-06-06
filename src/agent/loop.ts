@@ -14,7 +14,8 @@ export interface RunAgentTurnOptions {
   model: ModelClient;
   tools: ToolRegistry;
   permissions: PermissionEngine;
-  confirm?: (request: ConfirmationRequest) => Promise<boolean>;
+  confirm?: (request: ConfirmationRequest) => Promise<ConfirmationDecision>;
+  rememberPermission?: (request: ConfirmationRequest) => Promise<void>;
   audit?: AuditSink;
   sessionId?: string;
   sessions?: SessionRepository;
@@ -41,6 +42,8 @@ export interface ConfirmationRequest {
   input: unknown;
   permission: PermissionResult;
 }
+
+export type ConfirmationDecision = boolean | 'remember';
 
 export interface ReflectionSink {
   summarize: (result: { userMessage: string; finalText: string }) => Promise<string | undefined>;
@@ -154,6 +157,9 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
 
     if (permission.decision === 'ask') {
       const approved = options.confirm ? await options.confirm({ tool, input: result.input, permission }) : false;
+      if (approved === 'remember') {
+        await options.rememberPermission?.({ tool, input: result.input, permission });
+      }
       if (!approved) {
         messages.push({
           role: 'tool',
