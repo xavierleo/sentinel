@@ -1,4 +1,6 @@
 import type { ModelClient, ModelMessage } from '../model/types.js';
+import type { ModelUsage } from '../model/types.js';
+import type { ReplayActor } from '../observability/replay.js';
 import type { Tracer } from '../observability/tracer.js';
 import type { PermissionEngine, PermissionResult } from '../permissions/types.js';
 import type { SessionRepository } from '../sessions/repository.js';
@@ -17,8 +19,18 @@ export interface RunAgentTurnOptions {
   sessions?: SessionRepository;
   memorySummary?: string;
   tracer?: Tracer;
+  costLedger?: CostSink;
+  replay?: ReplaySink;
   reflection?: ReflectionSink;
   maxSteps?: number;
+}
+
+export interface CostSink {
+  recordModelUsage: (usage: ModelUsage & { sessionId: string }) => number;
+}
+
+export interface ReplaySink {
+  recordEvent: (event: { sessionId: string; actor: ReplayActor; kind: string; payload: unknown }) => number;
 }
 
 export interface ConfirmationRequest {
@@ -61,6 +73,7 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
     options.sessions.appendMessage({ sessionId, role: 'user', content: options.message });
     options.sessions.markStepStarted({ sessionId, stepId });
   }
+  options.replay?.recordEvent({ sessionId, actor: 'user', kind: 'message', payload: { text: options.message } });
   const messages: ModelMessage[] = [
     ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
     { role: 'user', content: options.message },
@@ -75,6 +88,17 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
     const result = options.tracer
       ? await options.tracer.withSpan('model_call', { step }, modelCall)
       : await modelCall();
+    if (result.usage) {
+      options.costLedger?.recordModelUsage({
+        sessionId,
+        provider: result.usage.provider,
+        model: result.usage.model,
+        tokensIn: result.usage.tokensIn,
+        tokensOut: result.usage.tokensOut,
+        cachedTokensIn: result.usage.cachedTokensIn,
+        costUsd: result.usage.costUsd,
+      });
+    }
 
     if (result.type === 'text') {
       if (options.reflection) {
@@ -84,6 +108,7 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
         }
       }
       options.sessions?.appendMessage({ sessionId, role: 'assistant', content: result.text });
+      options.replay?.recordEvent({ sessionId, actor: 'agent', kind: 'message', payload: { text: result.text } });
       options.sessions?.markStepCompleted({ sessionId, stepId });
       return { text: result.text, steps: step };
     }

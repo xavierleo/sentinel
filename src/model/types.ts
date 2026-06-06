@@ -5,16 +5,27 @@ export interface ModelMessage {
   content: string;
 }
 
+export interface ModelUsage {
+  provider: string;
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  cachedTokensIn: number;
+  costUsd: number;
+}
+
 export type ModelTurnResult =
   | {
       type: 'text';
       text: string;
+      usage?: ModelUsage;
     }
   | {
       type: 'tool_call';
       id: string;
       name: string;
       input: unknown;
+      usage?: ModelUsage;
     };
 
 export interface ModelClient {

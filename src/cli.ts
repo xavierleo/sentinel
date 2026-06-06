@@ -92,6 +92,8 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       const db = createStateDatabase(dbPath);
       const memory = createMemoryRepository(db);
       const sessions = createSessionRepository(db);
+      const costLedger = createCostLedger(db);
+      const replay = createReplayRepository(db);
       const tools = createDefaultToolRegistry({ memory });
 
       try {
@@ -103,6 +105,8 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
           memorySummary: memory.summarizeInventory(),
           sessionId,
           sessions,
+          costLedger,
+          replay,
           tracer: createInMemoryTracer(),
           reflection: {
             summarize: async ({ userMessage, finalText }) =>

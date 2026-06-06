@@ -1,5 +1,34 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { ModelUsage } from './types.js';
 import type { ModelClient, ModelMessage, ModelTurnResult } from './types.js';
+
+const pricingPerMillionTokens: Record<string, { input: number; output: number; cachedInput: number }> = {
+  'claude-sonnet-4-20250514': { input: 3, output: 15, cachedInput: 0.3 },
+};
+
+function usageFromResponse(response: Anthropic.Messages.Message, model: string): ModelUsage | undefined {
+  const usage = response.usage;
+  if (!usage) {
+    return undefined;
+  }
+
+  const tokensIn = usage.input_tokens ?? 0;
+  const tokensOut = usage.output_tokens ?? 0;
+  const cachedTokensIn = usage.cache_read_input_tokens ?? 0;
+  const pricing = pricingPerMillionTokens[model];
+  const costUsd = pricing
+    ? ((tokensIn - cachedTokensIn) * pricing.input + cachedTokensIn * pricing.cachedInput + tokensOut * pricing.output) / 1_000_000
+    : 0;
+
+  return {
+    provider: 'anthropic',
+    model,
+    tokensIn,
+    tokensOut,
+    cachedTokensIn,
+    costUsd,
+  };
+}
 
 function toAnthropicMessages(messages: ModelMessage[]): Anthropic.Messages.MessageParam[] {
   const converted: Anthropic.Messages.MessageParam[] = [];
@@ -63,6 +92,7 @@ export function createAnthropicModelClient(options: {
           id: toolUse.id,
           name: toolUse.name,
           input: toolUse.input,
+          usage: usageFromResponse(response, model),
         };
       }
 
@@ -72,7 +102,7 @@ export function createAnthropicModelClient(options: {
         .join('\n')
         .trim();
 
-      return { type: 'text', text };
+      return { type: 'text', text, usage: usageFromResponse(response, model) };
     },
   };
 }
