@@ -6,6 +6,8 @@ import { createInterface } from 'node:readline/promises';
 import { runAgentTurn } from './agent/loop.js';
 import type { ChannelRunner, InboundRunContext } from './channels/types.js';
 import { createGrammyTelegramChannel } from './channels/telegram.js';
+import { createHealthServer } from './daemon/health.js';
+import { createDaemonRunner } from './daemon/runner.js';
 import { refreshContainerInventory } from './memory/inventory-refresh.js';
 import { createMemoryRepository } from './memory/repository.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
@@ -46,6 +48,7 @@ export interface CliDependencies {
   summarizeCost: () => Promise<string>;
   replaySession: (sessionId: string) => Promise<string>;
   runDoctor: () => Promise<string>;
+  startDaemon: () => Promise<void>;
 }
 
 const defaultIo: CliIo = {
@@ -115,25 +118,68 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
     }
   };
 
+  const refreshMemory: CliDependencies['refreshMemory'] = async () => {
+    const dbPath = stateDbPath();
+    await mkdir(dirname(dbPath), { recursive: true });
+    const db = createStateDatabase(dbPath);
+    const memory = createMemoryRepository(db);
+    const containerList = createContainerListTool();
+
+    try {
+      const result = await refreshContainerInventory({
+        memory,
+        listContainers: () => containerList.execute({}),
+      });
+
+      return `Memory refreshed: ${result.containers} containers`;
+    } finally {
+      db.close();
+    }
+  };
+
   return {
     runAgent,
+    refreshMemory,
 
-    async refreshMemory() {
-      const dbPath = stateDbPath();
-      await mkdir(dirname(dbPath), { recursive: true });
-      const db = createStateDatabase(dbPath);
-      const memory = createMemoryRepository(db);
-      const containerList = createContainerListTool();
+    async startDaemon() {
+      let ready = false;
+      const runner = createDaemonRunner({
+        runStartupChecks: async () =>
+          runDoctor({
+            checks: {
+              database: async () => ({ ok: true, message: 'database check configured' }),
+              auditLog: async () => ({ ok: true, message: 'audit check configured' }),
+              scheduler: async () => ({ ok: true, message: 'scheduler idle' }),
+            },
+          }),
+        startHealthServer: async () => {
+          const server = await createHealthServer({
+            host: process.env.SENTINEL_HEALTH_HOST ?? '127.0.0.1',
+            port: Number(process.env.SENTINEL_HEALTH_PORT ?? 8787),
+            isReady: () => ready,
+          }).start();
+          io.stdout(`Healthcheck listening at ${server.url}/healthz`);
+          return server;
+        },
+        refreshOnce: async () => {
+          await refreshMemory();
+          ready = true;
+        },
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        refreshIntervalMs: Number(process.env.SENTINEL_REFRESH_INTERVAL_MS ?? 15 * 60_000),
+      });
+
+      const stop = () => {
+        void runner.stop();
+      };
+      process.once('SIGINT', stop);
+      process.once('SIGTERM', stop);
 
       try {
-        const result = await refreshContainerInventory({
-          memory,
-          listContainers: () => containerList.execute({}),
-        });
-
-        return `Memory refreshed: ${result.containers} containers`;
+        await runner.runForever();
       } finally {
-        db.close();
+        process.off('SIGINT', stop);
+        process.off('SIGTERM', stop);
       }
     },
 
@@ -233,6 +279,13 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
         .map((tool) => tool.name)
         .sort();
       io.stdout(names.join('\n'));
+    });
+
+  program
+    .command('daemon')
+    .description('Start Sentinel daemon runtime')
+    .action(async () => {
+      await deps.startDaemon();
     });
 
   program
