@@ -1,7 +1,7 @@
 import type { ModelToolDefinition } from '../tools/types.js';
 
 export interface ModelMessage {
-  role: 'user' | 'assistant' | 'tool';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
 }
 

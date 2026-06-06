@@ -4,14 +4,17 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { runAgentTurn } from './agent/loop.js';
+import { refreshContainerInventory } from './memory/inventory-refresh.js';
+import { createMemoryRepository } from './memory/repository.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
 import { createDefaultPermissionEngine } from './permissions/engine.js';
 import { createYamlPermissionEngine } from './permissions/rules.js';
 import { createAuditRepository } from './storage/audit.js';
 import { createStateDatabase } from './storage/database.js';
+import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
 
-export const versionLabel = 'Sentinel v2.0 Milestone 2';
+export const versionLabel = 'Sentinel v2.0 Milestone 3';
 
 export interface CliConfirmationRequest {
   toolName: string;
@@ -31,6 +34,7 @@ export interface CliRunContext {
 
 export interface CliDependencies {
   runAgent: (message: string, context: CliRunContext) => Promise<string>;
+  refreshMemory: () => Promise<string>;
 }
 
 const defaultIo: CliIo = {
@@ -67,7 +71,8 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       const dbPath = stateDbPath();
       await mkdir(dirname(dbPath), { recursive: true });
       const db = createStateDatabase(dbPath);
-      const tools = createDefaultToolRegistry();
+      const memory = createMemoryRepository(db);
+      const tools = createDefaultToolRegistry({ memory });
 
       try {
         const result = await runAgentTurn({
@@ -75,6 +80,7 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
           tools,
           permissions: await createPermissionEngine(),
           audit: createAuditRepository(db),
+          memorySummary: memory.summarizeInventory(),
           confirm: ({ tool, input, permission }) =>
             context.confirmTool({
               toolName: tool.name,
@@ -85,6 +91,25 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         });
 
         return result.text;
+      } finally {
+        db.close();
+      }
+    },
+
+    async refreshMemory() {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      const memory = createMemoryRepository(db);
+      const containerList = createContainerListTool();
+
+      try {
+        const result = await refreshContainerInventory({
+          memory,
+          listContainers: () => containerList.execute({}),
+        });
+
+        return `Memory refreshed: ${result.containers} containers`;
       } finally {
         db.close();
       }
@@ -104,7 +129,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .command('status')
     .description('Show local Sentinel status')
     .action(() => {
-      io.stdout(['Sentinel status', 'Milestone: 2 safety and persistence', 'Persistence: SQLite audit enabled', 'Channels: CLI only'].join('\n'));
+      io.stdout(['Sentinel status', 'Milestone: 3 memory v1', 'Persistence: SQLite memory and audit enabled', 'Channels: CLI only'].join('\n'));
     });
 
   program
@@ -116,6 +141,18 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
         .map((tool) => tool.name)
         .sort();
       io.stdout(names.join('\n'));
+    });
+
+  program
+    .command('memory')
+    .description('Memory operations')
+    .argument('<subcommand>', 'Memory subcommand')
+    .action(async (subcommand: string) => {
+      if (subcommand !== 'refresh') {
+        throw new Error(`Unknown memory subcommand: ${subcommand}`);
+      }
+
+      io.stdout(await deps.refreshMemory());
     });
 
   program

@@ -12,6 +12,7 @@ export interface RunAgentTurnOptions {
   confirm?: (request: ConfirmationRequest) => Promise<boolean>;
   audit?: AuditSink;
   sessionId?: string;
+  memorySummary?: string;
   maxSteps?: number;
 }
 
@@ -32,7 +33,10 @@ function stringifyObservation(value: unknown): string {
 
 export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurnResult> {
   const maxSteps = options.maxSteps ?? 8;
-  const messages: ModelMessage[] = [{ role: 'user', content: options.message }];
+  const messages: ModelMessage[] = [
+    ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
+    { role: 'user', content: options.message },
+  ];
 
   for (let step = 1; step <= maxSteps; step += 1) {
     const result = await options.model.completeTurn({

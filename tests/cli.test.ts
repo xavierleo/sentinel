@@ -22,7 +22,7 @@ describe('cli', () => {
     const exitCode = await runCli(['--version'], harness.io);
 
     expect(exitCode).toBe(0);
-    expect(harness.stdout).toEqual(['Sentinel v2.0 Milestone 2']);
+    expect(harness.stdout).toEqual(['Sentinel v2.0 Milestone 3']);
     expect(harness.stderr).toEqual([]);
   });
 
@@ -68,6 +68,6 @@ describe('cli', () => {
     const exitCode = await runCli(['status'], harness.io);
 
     expect(exitCode).toBe(0);
-    expect(harness.stdout.join('\n')).toContain('Milestone: 2 safety and persistence');
+    expect(harness.stdout.join('\n')).toContain('Milestone: 3 memory v1');
   });
 });
