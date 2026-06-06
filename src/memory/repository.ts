@@ -4,8 +4,12 @@ import type { EntityWrite, MemoryEntity, MemoryKind, MemoryNote, MemorySearchRes
 export interface MemoryRepository {
   upsertEntity: (entity: EntityWrite, observedAt?: number) => void;
   setEntityAttr: (entityId: string, attribute: string, value: string, source: string, observedAt?: number) => void;
+  remember: (fact: { entityId: string; attribute: string; value: string; source?: string }) => void;
   getEntity: (entityId: string) => MemoryEntity | undefined;
   addNote: (note: NoteWrite) => number;
+  setPreference: (key: string, value: string) => void;
+  getPreference: (key: string) => string | undefined;
+  summarizePreferences: () => string;
   search: (request: { query: string; kinds?: MemoryKind[]; limit?: number }) => MemorySearchResult[];
   summarizeInventory: (limit?: number) => string;
 }
@@ -43,6 +47,10 @@ export function createMemoryRepository(db: StateDatabase, options: { now?: () =>
             superseded_at = null
         `,
       ).run(entityId, attribute, value, source, observedAt);
+    },
+
+    remember(fact) {
+      this.setEntityAttr(fact.entityId, fact.attribute, fact.value, fact.source ?? 'agent', now());
     },
 
     getEntity(entityId) {
@@ -102,6 +110,32 @@ export function createMemoryRepository(db: StateDatabase, options: { now?: () =>
       const id = Number(result.lastInsertRowid);
       db.prepare('insert into notes_fts (rowid, body, tags) values (?, ?, ?)').run(id, note.body, tags);
       return id;
+    },
+
+    setPreference(key, value) {
+      db.prepare(
+        `
+          insert into preferences (key, value, updated_at)
+          values (?, ?, ?)
+          on conflict(key) do update set
+            value = excluded.value,
+            updated_at = excluded.updated_at
+        `,
+      ).run(key, value, now());
+    },
+
+    getPreference(key) {
+      const row = db.prepare('select value from preferences where key = ?').get(key) as { value: string } | undefined;
+      return row?.value;
+    },
+
+    summarizePreferences() {
+      const rows = db.prepare('select key, value from preferences order by key').all() as { key: string; value: string }[];
+      if (rows.length === 0) {
+        return 'User preferences: empty';
+      }
+
+      return ['User preferences:', ...rows.map((row) => `- ${row.key}: ${row.value}`)].join('\n');
     },
 
     search(request) {

@@ -19,7 +19,7 @@ import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
 
-export const versionLabel = 'Sentinel v2.0 Milestone 5';
+export const versionLabel = 'Sentinel v2.0 Milestone 6';
 
 export interface CliConfirmationRequest {
   toolName: string;
@@ -91,6 +91,13 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         memorySummary: memory.summarizeInventory(),
         sessionId: context.inbound?.sessionId,
         tracer: createInMemoryTracer(),
+        reflection: {
+          summarize: async ({ userMessage, finalText }) =>
+            userMessage.trim() && finalText.trim() ? `Turn answered: ${userMessage}` : undefined,
+          recordNote: async (body) => {
+            memory.addNote({ body, tags: ['reflection'] });
+          },
+        },
         confirm: ({ tool, input, permission }) =>
           context.confirmTool({
             toolName: tool.name,
@@ -196,7 +203,7 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .command('status')
     .description('Show local Sentinel status')
     .action(() => {
-      io.stdout(['Sentinel status', 'Milestone: 5 observability', 'Persistence: SQLite memory, audit, cost, replay enabled', 'Channels: CLI and Telegram'].join('\n'));
+      io.stdout(['Sentinel status', 'Milestone: 6 memory v2 and discovery', 'Persistence: SQLite memory, preferences, audit, cost, replay enabled', 'Channels: CLI and Telegram'].join('\n'));
     });
 
   program

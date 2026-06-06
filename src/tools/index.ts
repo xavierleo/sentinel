@@ -1,6 +1,13 @@
 import { createContainerActionTool, createContainerListTool } from './container.js';
+import { createDiscoverNetworkTool, createDiscoverServicesTool, createDiscoverVolumesTool } from './discovery.js';
 import { createFsListTool, createFsReadTool } from './fs.js';
-import { createMemoryGetTool, createMemoryNoteTool, createMemorySearchTool } from './memory.js';
+import {
+  createMemoryGetTool,
+  createMemoryNoteTool,
+  createMemoryRememberTool,
+  createMemorySearchTool,
+  createMemorySetPreferenceTool,
+} from './memory.js';
 import { createToolRegistry } from './registry.js';
 import type { MemoryRepository } from '../memory/repository.js';
 
@@ -10,10 +17,15 @@ export function createDefaultToolRegistry(options: { memory?: MemoryRepository }
   registry.register(createFsReadTool());
   registry.register(createContainerListTool());
   registry.register(createContainerActionTool());
+  registry.register(createDiscoverServicesTool());
+  registry.register(createDiscoverVolumesTool());
+  registry.register(createDiscoverNetworkTool());
   if (options.memory) {
     registry.register(createMemorySearchTool(options.memory));
     registry.register(createMemoryGetTool(options.memory));
     registry.register(createMemoryNoteTool(options.memory));
+    registry.register(createMemoryRememberTool(options.memory));
+    registry.register(createMemorySetPreferenceTool(options.memory));
   }
   return registry;
 }

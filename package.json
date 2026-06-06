@@ -1,6 +1,6 @@
 {
   "name": "sentinel-v2",
-  "version": "2.0.0-m5.0",
+  "version": "2.0.0-m6.0",
   "private": true,
   "type": "module",
   "bin": {

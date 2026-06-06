@@ -18,6 +18,17 @@ const memoryNoteSchema = z.object({
   entity: z.string().optional(),
 });
 
+const memoryRememberSchema = z.object({
+  entity: z.string().min(1),
+  attribute: z.string().min(1),
+  value: z.string().min(1),
+});
+
+const memorySetPreferenceSchema = z.object({
+  key: z.string().min(1),
+  value: z.string().min(1),
+});
+
 export function createMemorySearchTool(memory: MemoryRepository): ToolDefinition<
   z.input<typeof memorySearchSchema>,
   { results: ReturnType<MemoryRepository['search']> }
@@ -69,6 +80,44 @@ export function createMemoryNoteTool(memory: MemoryRepository): ToolDefinition<z
           entityId: parsed.entity,
         }),
       };
+    },
+  };
+}
+
+export function createMemoryRememberTool(memory: MemoryRepository): ToolDefinition<
+  z.input<typeof memoryRememberSchema>,
+  { entity: string; attribute: string; value: string }
+> {
+  return {
+    name: 'memory_remember',
+    description: 'Remember a configuration fact about an entity.',
+    schema: memoryRememberSchema,
+    annotations: { readOnly: false },
+    async execute(args) {
+      const parsed = memoryRememberSchema.parse(args);
+      memory.remember({
+        entityId: parsed.entity,
+        attribute: parsed.attribute,
+        value: parsed.value,
+      });
+      return parsed;
+    },
+  };
+}
+
+export function createMemorySetPreferenceTool(memory: MemoryRepository): ToolDefinition<
+  z.input<typeof memorySetPreferenceSchema>,
+  { key: string; value: string }
+> {
+  return {
+    name: 'memory_set_preference',
+    description: 'Store an explicit user preference. Use only when the user clearly asks Sentinel to remember a preference.',
+    schema: memorySetPreferenceSchema,
+    annotations: { readOnly: false },
+    async execute(args) {
+      const parsed = memorySetPreferenceSchema.parse(args);
+      memory.setPreference(parsed.key, parsed.value);
+      return parsed;
     },
   };
 }
