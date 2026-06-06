@@ -1,5 +1,6 @@
 import type { ModelClient, ModelMessage } from '../model/types.js';
 import type { ModelUsage } from '../model/types.js';
+import type { BudgetDecision } from '../observability/budget-policy.js';
 import type { ReplayActor } from '../observability/replay.js';
 import type { Tracer } from '../observability/tracer.js';
 import type { PermissionEngine, PermissionResult } from '../permissions/types.js';
@@ -21,6 +22,8 @@ export interface RunAgentTurnOptions {
   tracer?: Tracer;
   costLedger?: CostSink;
   replay?: ReplaySink;
+  budgetDecision?: BudgetDecision;
+  budgetWarning?: string;
   reflection?: ReflectionSink;
   maxSteps?: number;
 }
@@ -64,6 +67,10 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
 }
 
 async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurnResult> {
+  if (options.budgetDecision?.decision === 'deny') {
+    throw new Error(options.budgetDecision.reason);
+  }
+
   const maxSteps = options.maxSteps ?? 8;
   const sessionId = options.sessionId ?? 'cli:local:default';
   const stepId = `${Date.now()}`;
@@ -75,6 +82,7 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
   }
   options.replay?.recordEvent({ sessionId, actor: 'user', kind: 'message', payload: { text: options.message } });
   const messages: ModelMessage[] = [
+    ...(options.budgetWarning ? [{ role: 'system' as const, content: options.budgetWarning }] : []),
     ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
     { role: 'user', content: options.message },
   ];
