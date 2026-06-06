@@ -12,6 +12,7 @@ import { refreshContainerInventory } from './memory/inventory-refresh.js';
 import { createMemoryRepository } from './memory/repository.js';
 import { createAnthropicModelClient } from './model/anthropic.js';
 import { createCostLedger } from './observability/cost-ledger.js';
+import { evaluateBudgetPolicy } from './observability/budget-policy.js';
 import { createReplayRepository } from './observability/replay.js';
 import { createInMemoryTracer } from './observability/tracer.js';
 import { runDoctor } from './ops/doctor.js';
@@ -95,6 +96,15 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       const costLedger = createCostLedger(db);
       const replay = createReplayRepository(db);
       const tools = createDefaultToolRegistry({ memory });
+      const now = new Date();
+      const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const to = from + 86_400_000;
+      const costSummary = costLedger.summarize({ from, to });
+      const budgetDecision = evaluateBudgetPolicy({
+        spentUsd: costSummary.costUsd,
+        softCapUsd: Number(process.env.SENTINEL_DAILY_SOFT_CAP_USD ?? 0.4),
+        hardCapUsd: Number(process.env.SENTINEL_DAILY_HARD_CAP_USD ?? 0.5),
+      });
 
       try {
         const result = await runAgentTurn({
@@ -102,11 +112,13 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
           tools,
           permissions: await createPermissionEngine(),
           audit: createAuditRepository(db),
-          memorySummary: memory.summarizeInventory(),
+          memorySummary: [memory.summarizeInventory(), memory.summarizePreferences()].join('\n\n'),
           sessionId,
           sessions,
           costLedger,
           replay,
+          budgetDecision,
+          budgetWarning: budgetDecision.decision === 'allow' ? budgetDecision.warning : undefined,
           tracer: createInMemoryTracer(),
           reflection: {
             summarize: async ({ userMessage, finalText }) =>
