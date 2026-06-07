@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard } from 'grammy';
+import type { CliConfirmationDecision } from '../cli.js';
 import type { CliConfirmationRequest } from '../cli.js';
 import type { Channel, ChannelConfirmationContext, ChannelRunner } from './types.js';
 
@@ -27,11 +28,12 @@ export interface TelegramChannelOptions {
   bot: TelegramBotLike;
   authorizedUserId: number;
   runAgent: ChannelRunner;
+  maxMessageLength?: number;
 }
 
 interface PendingConfirmation {
   userId: number;
-  resolve: (approved: boolean) => void;
+  resolve: (approved: CliConfirmationDecision) => void;
 }
 
 function buildConfirmationText(request: CliConfirmationRequest): string {
@@ -41,11 +43,25 @@ function buildConfirmationText(request: CliConfirmationRequest): string {
 function buildInlineKeyboard(id: number): InlineKeyboard {
   return new InlineKeyboard()
     .text('Approve', `sentinel_confirm:approve:${id}`)
-    .text('Deny', `sentinel_confirm:deny:${id}`);
+    .text('Deny', `sentinel_confirm:deny:${id}`)
+    .text('Remember', `sentinel_confirm:remember:${id}`);
+}
+
+function splitTelegramMessage(text: string, maxLength: number): string[] {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  for (let index = 0; index < text.length; index += maxLength) {
+    chunks.push(text.slice(index, index + maxLength));
+  }
+  return chunks;
 }
 
 export function createTelegramChannel(options: TelegramChannelOptions): Channel {
   const pending = new Map<number, PendingConfirmation>();
+  const maxMessageLength = options.maxMessageLength ?? 3900;
   let nextConfirmationId = 1;
 
   async function handleText(ctx: TelegramMessageContext): Promise<void> {
@@ -70,7 +86,9 @@ export function createTelegramChannel(options: TelegramChannelOptions): Channel 
           reply: ctx.reply,
         }),
     });
-    await ctx.reply(response);
+    for (const chunk of splitTelegramMessage(response, maxMessageLength)) {
+      await ctx.reply(chunk);
+    }
   }
 
   async function handleConfirmationCallback(ctx: TelegramCallbackContext): Promise<void> {
@@ -78,7 +96,7 @@ export function createTelegramChannel(options: TelegramChannelOptions): Channel 
       return;
     }
 
-    const match = /^sentinel_confirm:(approve|deny):(\d+)$/.exec(ctx.callbackQuery?.data ?? '');
+    const match = /^sentinel_confirm:(approve|deny|remember):(\d+)$/.exec(ctx.callbackQuery?.data ?? '');
     if (!match) {
       return;
     }
@@ -91,23 +109,23 @@ export function createTelegramChannel(options: TelegramChannelOptions): Channel 
     }
 
     pending.delete(id);
-    const approved = match[1] === 'approve';
-    confirmation.resolve(approved);
+    const decision: CliConfirmationDecision = match[1] === 'remember' ? 'remember' : match[1] === 'approve';
+    confirmation.resolve(decision);
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(approved ? 'Approved.' : 'Denied.');
+    await ctx.editMessageText(decision === 'remember' ? 'Approved and remembered.' : decision ? 'Approved.' : 'Denied.');
   }
 
   const thisChannel: Channel = {
     registerHandlers() {
       options.bot.on('message:text', handleText);
-      options.bot.callbackQuery(/^sentinel_confirm:(approve|deny):\d+$/, handleConfirmationCallback);
+      options.bot.callbackQuery(/^sentinel_confirm:(approve|deny|remember):\d+$/, handleConfirmationCallback);
     },
 
-    requestConfirmation(request: CliConfirmationRequest, context: ChannelConfirmationContext): Promise<boolean> {
+    requestConfirmation(request: CliConfirmationRequest, context: ChannelConfirmationContext): Promise<CliConfirmationDecision> {
       const id = nextConfirmationId;
       nextConfirmationId += 1;
 
-      const result = new Promise<boolean>((resolve) => {
+      const result = new Promise<CliConfirmationDecision>((resolve) => {
         pending.set(id, { userId: context.userId, resolve });
       });
 
