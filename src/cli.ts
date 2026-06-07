@@ -55,6 +55,7 @@ export interface CliRunContext {
 
 export interface CliDependencies {
   runAgent: (message: string, context: CliRunContext) => Promise<string>;
+  startChat: () => Promise<void>;
   refreshMemory: () => Promise<string>;
   summarizeMemory: () => Promise<string>;
   searchMemory: (query: string) => Promise<string>;
@@ -264,6 +265,35 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
     }
   };
 
+  const startChat: CliDependencies['startChat'] = async () => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    io.stdout('Sentinel chat started. Type /exit or /quit to leave.');
+
+    try {
+      for (;;) {
+        const message = (await rl.question('sentinel> ')).trim();
+        if (!message) {
+          continue;
+        }
+
+        if (message === '/exit' || message === '/quit') {
+          return;
+        }
+
+        const response = await runAgent(message, {
+          inbound: { channel: 'cli', userId: 'local', sessionId: 'cli:local:chat' },
+          confirmTool: async (request) => {
+            const confirm = io.confirmTool ?? defaultIo.confirmTool;
+            return confirm ? confirm(request) : false;
+          },
+        });
+        io.stdout(response);
+      }
+    } finally {
+      rl.close();
+    }
+  };
+
   const summarizeMemory: CliDependencies['summarizeMemory'] = async () => {
     const dbPath = stateDbPath();
     await mkdir(dirname(dbPath), { recursive: true });
@@ -305,6 +335,7 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
 
   return {
     runAgent,
+    startChat,
     refreshMemory,
     summarizeMemory,
     searchMemory,
@@ -602,6 +633,13 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
       }
 
       throw new Error(`Unknown memory subcommand: ${subcommand}`);
+    });
+
+  program
+    .command('chat')
+    .description('Start an interactive Sentinel chat session')
+    .action(async () => {
+      await deps.startChat();
     });
 
   program
