@@ -44,13 +44,16 @@ import {
   createWorkspaceReadTool,
 } from './workspace.js';
 import { createSkillIndexTool, createSkillViewTool } from './skills.js';
+import { createConsolidateNowTool } from './consolidation.js';
 import { createToolRegistry } from './registry.js';
 import type { MemoryRepository } from '../memory/repository.js';
 import type { StateDatabase } from '../storage/database.js';
+import type { RunConsolidationResult } from '../consolidation/reflection.js';
 
 export function createDefaultToolRegistry(options: {
   memory?: MemoryRepository;
   workspace?: { root: string; proposalsRoot: string; db?: StateDatabase; sessionId?: string };
+  consolidation?: { consolidate: (sessionId?: string) => Promise<RunConsolidationResult> };
 } = {}) {
   const registry = createToolRegistry({ structuredErrors: true });
   registry.register(createShellExecTool());
@@ -93,6 +96,9 @@ export function createDefaultToolRegistry(options: {
     registry.register(createWorkspaceNoteTool({ root: options.workspace.root }));
     registry.register(createSkillIndexTool({ root: options.workspace.root }));
     registry.register(createSkillViewTool({ root: options.workspace.root }));
+  }
+  if (options.consolidation) {
+    registry.register(createConsolidateNowTool(options.consolidation));
   }
   return registry;
 }

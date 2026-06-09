@@ -38,6 +38,7 @@ import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
 import { assembleCacheableSystemPrompt } from './context/prompt.js';
+import { runConsolidation } from './consolidation/reflection.js';
 import { createSkillsRegistry } from './skills/registry.js';
 import { matchSkillTriggers } from './skills/triggers.js';
 import { loadWorkspaceSnapshot } from './workspace/loader.js';
@@ -99,6 +100,7 @@ export interface CliDependencies {
   commitWorkspace: (message: string) => Promise<string>;
   listSkills: () => Promise<string>;
   matchSkills: (message: string) => Promise<string>;
+  consolidateSession: (sessionId: string) => Promise<string>;
 }
 
 const defaultIo: CliIo = {
@@ -262,6 +264,10 @@ function formatAuditLogs(events: ReturnType<ReturnType<typeof createAuditReposit
   ].join('\n');
 }
 
+function formatTranscript(messages: ReturnType<ReturnType<typeof createSessionRepository>['readMessages']>): string {
+  return messages.map((message) => `${message.role}: ${message.content}`).join('\n');
+}
+
 export async function createInteractiveChatSession(options: InteractiveChatOptions): Promise<void> {
   let reloadGeneration = 0;
   options.stdout('Sentinel chat started. Type /exit, /quit, or /reload.');
@@ -315,7 +321,27 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       const replay = createReplayRepository(db);
       const root = workspaceRoot();
       const proposals = proposalsRoot();
-      const tools = createDefaultToolRegistry({ memory, workspace: { root, proposalsRoot: proposals, db, sessionId } });
+      const consolidate = async (targetSessionId = sessionId) => {
+        const transcript = formatTranscript(sessions.readMessages(targetSessionId));
+        return runConsolidation({
+          model: createConfiguredModelClient({
+            anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+            openaiApiKey: process.env.OPENAI_API_KEY,
+            localModelUrl: process.env.SENTINEL_LOCAL_MODEL_URL,
+            localModelName: process.env.SENTINEL_LOCAL_MODEL_NAME,
+          }),
+          transcript,
+          root,
+          proposalsRoot: proposals,
+          sessionId: targetSessionId,
+          db,
+        });
+      };
+      const tools = createDefaultToolRegistry({
+        memory,
+        workspace: { root, proposalsRoot: proposals, db, sessionId },
+        consolidation: { consolidate },
+      });
       const workspace = await loadWorkspaceSnapshot({ root });
       if (workspace.fatalErrors.length > 0) {
         throw new Error(`Workspace not initialized: ${workspace.fatalErrors.join(', ')}. Run sentinel init.`);
@@ -771,6 +797,35 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
       }
       return [`Matched skills for ${message}:`, ...matches.map((match) => `- ${match}`)].join('\n');
     },
+
+    async consolidateSession(sessionId) {
+      const dbPath = stateDbPath();
+      await mkdir(dirname(dbPath), { recursive: true });
+      const db = createStateDatabase(dbPath);
+      try {
+        const sessions = createSessionRepository(db);
+        const transcript = formatTranscript(sessions.readMessages(sessionId));
+        if (!transcript.trim()) {
+          throw new Error(`No transcript messages for ${sessionId}`);
+        }
+        const result = await runConsolidation({
+          model: createConfiguredModelClient({
+            anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+            openaiApiKey: process.env.OPENAI_API_KEY,
+            localModelUrl: process.env.SENTINEL_LOCAL_MODEL_URL,
+            localModelName: process.env.SENTINEL_LOCAL_MODEL_NAME,
+          }),
+          transcript,
+          root: workspaceRoot(),
+          proposalsRoot: proposalsRoot(),
+          sessionId,
+          db,
+        });
+        return `Consolidated ${sessionId}: ${result.proposals.length} proposal${result.proposals.length === 1 ? '' : 's'}`;
+      } finally {
+        db.close();
+      }
+    },
   };
 }
 
@@ -842,6 +897,14 @@ function createProgram(io: CliIo, deps: CliDependencies): Command {
     .argument('<session_id>', 'Session id to replay')
     .action(async (sessionId: string) => {
       io.stdout(await deps.replaySession(sessionId));
+    });
+
+  program
+    .command('consolidate')
+    .description('Run consolidation reflection for a session')
+    .argument('<session_id>', 'Session id to consolidate')
+    .action(async (sessionId: string) => {
+      io.stdout(await deps.consolidateSession(sessionId));
     });
 
   program

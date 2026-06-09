@@ -13,7 +13,7 @@ import {
 
 async function tempWorkspace() {
   const root = join(tmpdir(), `sentinel-tools-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-  const proposalsRoot = join(root, '..', 'proposals');
+  const proposalsRoot = join(root, 'proposals');
   await mkdir(join(root, 'memory'), { recursive: true });
   await writeFile(join(root, 'MEMORY.md'), '# MEMORY\n\n## Topology\n');
   return { root, proposalsRoot };
@@ -99,4 +99,3 @@ describe('workspace tools', () => {
     }
   });
 });
-

@@ -88,7 +88,10 @@ describe('tool registry', () => {
   });
 
   it('registers workspace and skill tools when a workspace root is configured', () => {
-    const registry = createDefaultToolRegistry({ workspace: { root: '/tmp/sentinel-workspace', proposalsRoot: '/tmp/sentinel-proposals' } });
+    const registry = createDefaultToolRegistry({
+      workspace: { root: '/tmp/sentinel-workspace', proposalsRoot: '/tmp/sentinel-proposals' },
+      consolidation: { consolidate: async (sessionId = 'cli:local:default') => ({ sessionId, proposals: [] }) },
+    });
 
     const names = registry.list().map((tool) => tool.name);
 
@@ -103,6 +106,7 @@ describe('tool registry', () => {
         'workspace_note',
         'skill_index',
         'skill_view',
+        'consolidate_now',
       ]),
     );
   });
