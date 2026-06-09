@@ -202,4 +202,78 @@ describe('telegram channel', () => {
     await expect(resultPromise).resolves.toBe('remember');
     expect(editMessageText).toHaveBeenCalledWith('Approved and remembered.');
   });
+
+  it('surfaces pending workspace proposals with approve and reject buttons after agent responses', async () => {
+    const harness = createHarness();
+    const reply = vi.fn();
+    const channel = createTelegramChannel({
+      bot: harness.bot as any,
+      authorizedUserId: 42,
+      runAgent: vi.fn().mockResolvedValue('proposal created'),
+      proposalActions: {
+        list: vi.fn().mockResolvedValue([{ id: '1-prop', target: 'MEMORY.md', summary: 'Add host fact' }]),
+        apply: vi.fn(),
+        reject: vi.fn(),
+      },
+    });
+
+    channel.registerHandlers();
+    await harness.handlers.get('message:text')?.({
+      from: { id: 42 },
+      chat: { id: 99 },
+      message: { text: 'remember this' },
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith('proposal created');
+    expect(reply).toHaveBeenCalledWith(
+      'Workspace proposal 1-prop\nTarget: MEMORY.md\nAdd host fact',
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          inline_keyboard: [
+            [
+              expect.objectContaining({ text: 'Approve', callback_data: 'sentinel_proposal:apply:1-prop' }),
+              expect.objectContaining({ text: 'Reject', callback_data: 'sentinel_proposal:reject:1-prop' }),
+            ],
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('applies and rejects workspace proposals from Telegram callbacks', async () => {
+    const harness = createHarness();
+    const apply = vi.fn();
+    const reject = vi.fn();
+    const channel = createTelegramChannel({
+      bot: harness.bot as any,
+      authorizedUserId: 42,
+      runAgent: vi.fn(),
+      proposalActions: {
+        list: vi.fn(),
+        apply,
+        reject,
+      },
+    });
+    channel.registerHandlers();
+    const callbackHandler = [...harness.handlers.entries()].find(([key]) => key.includes('sentinel_proposal'))?.[1];
+    const editMessageText = vi.fn();
+
+    await callbackHandler?.({
+      from: { id: 42 },
+      callbackQuery: { data: 'sentinel_proposal:apply:1-prop' },
+      answerCallbackQuery: vi.fn(),
+      editMessageText,
+    });
+    await callbackHandler?.({
+      from: { id: 42 },
+      callbackQuery: { data: 'sentinel_proposal:reject:2-prop' },
+      answerCallbackQuery: vi.fn(),
+      editMessageText,
+    });
+
+    expect(apply).toHaveBeenCalledWith('1-prop');
+    expect(reject).toHaveBeenCalledWith('2-prop', 'telegram reject');
+    expect(editMessageText.mock.calls.map(([text]) => text)).toEqual(['Workspace proposal approved: 1-prop', 'Workspace proposal rejected: 2-prop']);
+  });
 });
