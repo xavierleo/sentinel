@@ -600,6 +600,44 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         token: process.env.TELEGRAM_BOT_TOKEN,
         authorizedUserId: process.env.TELEGRAM_USER_ID ? Number(process.env.TELEGRAM_USER_ID) : undefined,
         runAgent: runner,
+        proposalActions: {
+          list: async () => {
+            const dbPath = stateDbPath();
+            await mkdir(dirname(dbPath), { recursive: true });
+            const db = createStateDatabase(dbPath);
+            try {
+              return (await createProposalQueue({ root: workspaceRoot(), proposalsRoot: proposalsRoot(), db }).list()).map(
+                (proposal) => ({
+                  id: proposal.id,
+                  target: proposal.target,
+                  summary: proposal.summary,
+                }),
+              );
+            } finally {
+              db.close();
+            }
+          },
+          apply: async (id) => {
+            const dbPath = stateDbPath();
+            await mkdir(dirname(dbPath), { recursive: true });
+            const db = createStateDatabase(dbPath);
+            try {
+              await createProposalQueue({ root: workspaceRoot(), proposalsRoot: proposalsRoot(), db }).apply(id);
+            } finally {
+              db.close();
+            }
+          },
+          reject: async (id, reason) => {
+            const dbPath = stateDbPath();
+            await mkdir(dirname(dbPath), { recursive: true });
+            const db = createStateDatabase(dbPath);
+            try {
+              await createProposalQueue({ root: workspaceRoot(), proposalsRoot: proposalsRoot(), db }).reject(id, reason);
+            } finally {
+              db.close();
+            }
+          },
+        },
       });
 
       io.stdout('Telegram channel started');

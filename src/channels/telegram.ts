@@ -30,6 +30,19 @@ export interface TelegramChannelOptions {
   runAgent: ChannelRunner;
   maxMessageLength?: number;
   progressMessage?: string;
+  proposalActions?: TelegramProposalActions;
+}
+
+export interface TelegramProposalSummary {
+  id: string;
+  target: string;
+  summary: string;
+}
+
+export interface TelegramProposalActions {
+  list: () => Promise<TelegramProposalSummary[]>;
+  apply: (id: string) => Promise<void>;
+  reject: (id: string, reason?: string) => Promise<void>;
 }
 
 interface PendingConfirmation {
@@ -46,6 +59,14 @@ function buildInlineKeyboard(id: number): InlineKeyboard {
     .text('Approve', `sentinel_confirm:approve:${id}`)
     .text('Deny', `sentinel_confirm:deny:${id}`)
     .text('Remember', `sentinel_confirm:remember:${id}`);
+}
+
+function buildProposalKeyboard(id: string): InlineKeyboard {
+  return new InlineKeyboard().text('Approve', `sentinel_proposal:apply:${id}`).text('Reject', `sentinel_proposal:reject:${id}`);
+}
+
+function buildProposalText(proposal: TelegramProposalSummary): string {
+  return [`Workspace proposal ${proposal.id}`, `Target: ${proposal.target}`, proposal.summary].join('\n');
 }
 
 function splitTelegramMessage(text: string, maxLength: number): string[] {
@@ -103,6 +124,15 @@ export function createTelegramChannel(options: TelegramChannelOptions): Channel 
     for (const chunk of splitTelegramMessage(response, maxMessageLength)) {
       await ctx.reply(chunk);
     }
+
+    if (options.proposalActions) {
+      const proposals = await options.proposalActions.list();
+      for (const proposal of proposals) {
+        await ctx.reply(buildProposalText(proposal), {
+          reply_markup: buildProposalKeyboard(proposal.id),
+        });
+      }
+    }
   }
 
   async function handleConfirmationCallback(ctx: TelegramCallbackContext): Promise<void> {
@@ -129,10 +159,34 @@ export function createTelegramChannel(options: TelegramChannelOptions): Channel 
     await ctx.editMessageText(decision === 'remember' ? 'Approved and remembered.' : decision ? 'Approved.' : 'Denied.');
   }
 
+  async function handleProposalCallback(ctx: TelegramCallbackContext): Promise<void> {
+    if (ctx.from?.id !== options.authorizedUserId) {
+      return;
+    }
+
+    const match = /^sentinel_proposal:(apply|reject):([a-zA-Z0-9._-]+)$/.exec(ctx.callbackQuery?.data ?? '');
+    if (!match || !options.proposalActions) {
+      return;
+    }
+
+    const [, action, id] = match;
+    if (action === 'apply') {
+      await options.proposalActions.apply(id);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(`Workspace proposal approved: ${id}`);
+      return;
+    }
+
+    await options.proposalActions.reject(id, 'telegram reject');
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(`Workspace proposal rejected: ${id}`);
+  }
+
   const thisChannel: Channel = {
     registerHandlers() {
       options.bot.on('message:text', handleText);
       options.bot.callbackQuery(/^sentinel_confirm:(approve|deny|remember):\d+$/, handleConfirmationCallback);
+      options.bot.callbackQuery(/^sentinel_proposal:(apply|reject):[a-zA-Z0-9._-]+$/, handleProposalCallback);
     },
 
     requestConfirmation(request: CliConfirmationRequest, context: ChannelConfirmationContext): Promise<CliConfirmationDecision> {
@@ -166,6 +220,7 @@ export function createGrammyTelegramChannel(options: {
   token: string | undefined;
   authorizedUserId: number | undefined;
   runAgent: ChannelRunner;
+  proposalActions?: TelegramProposalActions;
 }): Channel {
   if (!options.token) {
     throw new Error('TELEGRAM_BOT_TOKEN is required');
@@ -179,6 +234,7 @@ export function createGrammyTelegramChannel(options: {
     bot: new Bot(options.token) as unknown as TelegramBotLike,
     authorizedUserId: options.authorizedUserId,
     runAgent: options.runAgent,
+    proposalActions: options.proposalActions,
     progressMessage: 'Working on it...',
   });
   channel.registerHandlers();
