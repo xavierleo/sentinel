@@ -18,6 +18,10 @@ describe('startup checks', () => {
         checks: createStartupChecks({
           backupPath,
           hasModelApiKey: true,
+          logPath: '/var/log/sentinel/sentinel.jsonl',
+          telegramConfigured: true,
+          openaiFallbackConfigured: true,
+          canWritePath: async () => true,
         }),
       });
 
@@ -27,6 +31,9 @@ describe('startup checks', () => {
         'auditLog',
         'backup',
         'model',
+        'logs',
+        'telegram',
+        'providerFallback',
         'scheduler',
       ]);
       expect(result.checks.find((check) => check.name === 'backup')).toEqual({
@@ -46,5 +53,35 @@ describe('startup checks', () => {
       ok: false,
       message: 'SENTINEL_BACKUP_PATH is not configured',
     });
+  });
+
+  it('checks production config paths and provider fallback settings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sentinel-startup-config-'));
+    const backupPath = join(root, 'backup.db');
+    const db = createStateDatabase(backupPath);
+    db.close();
+
+    try {
+      const result = await runDoctor({
+        checks: createStartupChecks({
+          backupPath,
+          hasModelApiKey: true,
+          logPath: '/var/log/sentinel/sentinel.jsonl',
+          telegramConfigured: true,
+          openaiFallbackConfigured: true,
+          canWritePath: async (path) => path === '/var/log/sentinel/sentinel.jsonl',
+        }),
+      });
+
+      expect(result.checks).toEqual(
+        expect.arrayContaining([
+          { name: 'logs', ok: true, message: 'runtime log path writable' },
+          { name: 'telegram', ok: true, message: 'telegram configured' },
+          { name: 'providerFallback', ok: true, message: 'OpenAI fallback configured' },
+        ]),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

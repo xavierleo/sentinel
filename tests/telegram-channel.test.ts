@@ -83,6 +83,50 @@ describe('telegram channel', () => {
     expect(reply.mock.calls.map(([text]) => text.length)).toEqual([2000, 2000, 1000]);
   });
 
+  it('prefers sentence boundaries when splitting long agent responses', async () => {
+    const harness = createHarness();
+    const reply = vi.fn();
+    const runAgent = vi.fn().mockResolvedValue('First sentence. Second sentence. Third sentence.');
+    const channel = createTelegramChannel({
+      bot: harness.bot as any,
+      authorizedUserId: 42,
+      runAgent,
+      maxMessageLength: 32,
+    });
+
+    channel.registerHandlers();
+    await harness.handlers.get('message:text')?.({
+      from: { id: 42 },
+      chat: { id: 99 },
+      message: { text: 'status?' },
+      reply,
+    });
+
+    expect(reply.mock.calls.map(([text]) => text)).toEqual(['First sentence. Second sentence.', 'Third sentence.']);
+  });
+
+  it('sends a progress notification before running long operations', async () => {
+    const harness = createHarness();
+    const reply = vi.fn();
+    const runAgent = vi.fn().mockResolvedValue('done');
+    const channel = createTelegramChannel({
+      bot: harness.bot as any,
+      authorizedUserId: 42,
+      runAgent,
+      progressMessage: 'Working on it...',
+    });
+
+    channel.registerHandlers();
+    await harness.handlers.get('message:text')?.({
+      from: { id: 42 },
+      chat: { id: 99 },
+      message: { text: 'restart the container' },
+      reply,
+    });
+
+    expect(reply.mock.calls.map(([text]) => text)).toEqual(['Working on it...', 'done']);
+  });
+
   it('sends confirmation prompts with approve, deny, and remember buttons', async () => {
     const harness = createHarness();
     const reply = vi.fn();

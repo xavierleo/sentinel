@@ -1,0 +1,28 @@
+#!/usr/sbin/nft -f
+
+flush table inet sentinel_egress
+
+table inet sentinel_egress {
+  chain output {
+    type filter hook output priority 0; policy drop;
+
+    oifname "lo" accept
+    ip daddr 127.0.0.0/8 accept
+    ip6 daddr ::1/128 accept
+
+    # DNS is required to resolve the named provider allowlist entries below.
+    udp dport 53 accept
+    tcp dport 53 accept
+
+    # Resolve and pin these hostnames during deployment:
+    # - api.anthropic.com
+    # - api.openai.com
+    # - api.telegram.org
+    # - local subnet and Docker socket/proxy endpoints as needed
+    #
+    # Example after resolution:
+    # ip daddr { 203.0.113.10, 203.0.113.11 } tcp dport 443 accept
+
+    counter drop
+  }
+}
