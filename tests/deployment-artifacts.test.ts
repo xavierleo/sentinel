@@ -19,4 +19,13 @@ describe('deployment hardening artifacts', () => {
     expect(unit).toContain('NoNewPrivileges=true');
     expect(unit).toContain('ReadWritePaths=/var/lib/sentinel /var/log/sentinel /tmp');
   });
+
+  it('defines log rotation for structured runtime logs', async () => {
+    const policy = await readFile('deploy/sentinel.logrotate', 'utf8');
+
+    expect(policy).toContain('/var/log/sentinel/*.jsonl');
+    expect(policy).toContain('daily');
+    expect(policy).toContain('rotate 14');
+    expect(policy).toContain('compress');
+  });
 });

@@ -11,10 +11,13 @@ import { createDaemonRunner } from './daemon/runner.js';
 import { refreshContainerInventory } from './memory/inventory-refresh.js';
 import { createMemoryRepository } from './memory/repository.js';
 import type { MemoryRepository } from './memory/repository.js';
-import { createAnthropicModelClient } from './model/anthropic.js';
+import { createConfiguredModelClient } from './model/factory.js';
 import { createCostLedger } from './observability/cost-ledger.js';
 import { evaluateBudgetPolicy } from './observability/budget-policy.js';
 import { createReplayRepository } from './observability/replay.js';
+import { replaySession as replayRecordedSession } from './observability/replay-runner.js';
+import { createJsonlRuntimeLogger } from './observability/runtime-logger.js';
+import { createOtlpTracer } from './observability/otlp-tracer.js';
 import { createInMemoryTracer } from './observability/tracer.js';
 import { runDoctor } from './ops/doctor.js';
 import { createStartupChecks } from './ops/startup-checks.js';
@@ -105,6 +108,10 @@ function backupPath(): string | undefined {
   return process.env.SENTINEL_BACKUP_PATH;
 }
 
+function runtimeLogPath(): string {
+  return process.env.SENTINEL_LOG_PATH ?? '/var/log/sentinel/sentinel.jsonl';
+}
+
 async function createPermissionEngine() {
   return createYamlPermissionEngine({ rulesPath: permissionRulesPath(), fallback: createDefaultPermissionEngine() });
 }
@@ -183,8 +190,17 @@ function formatAuditLogs(events: ReturnType<ReturnType<typeof createAuditReposit
   ].join('\n');
 }
 
+async function ignoreTelemetryFailure(task: Promise<unknown>, io: CliIo): Promise<void> {
+  try {
+    await task;
+  } catch (error) {
+    io.stderr(`Telemetry warning: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function createDefaultDependencies(io: CliIo): CliDependencies {
   const locks = createSessionLockManager();
+  const logger = createJsonlRuntimeLogger({ logPath: runtimeLogPath() });
 
   const runAgent: CliDependencies['runAgent'] = async (message, context) => {
     const sessionId = context.inbound?.sessionId ?? 'cli:local:default';
@@ -206,8 +222,18 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         softCapUsd: Number(process.env.SENTINEL_DAILY_SOFT_CAP_USD ?? 0.4),
         hardCapUsd: Number(process.env.SENTINEL_DAILY_HARD_CAP_USD ?? 0.5),
       });
+      const tracer = process.env.SENTINEL_OTLP_ENDPOINT
+        ? createOtlpTracer({
+            endpoint: process.env.SENTINEL_OTLP_ENDPOINT,
+            serviceName: process.env.SENTINEL_OTLP_SERVICE_NAME ?? 'sentinel',
+          })
+        : createInMemoryTracer();
 
       try {
+        await ignoreTelemetryFailure(
+          logger.info('agent turn started', { sessionId, channel: context.inbound?.channel ?? 'cli' }),
+          io,
+        );
         const result = await runAgentTurn({
           message,
           tools,
@@ -220,7 +246,7 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
           replay,
           budgetDecision,
           budgetWarning: budgetDecision.decision === 'allow' ? budgetDecision.warning : undefined,
-          tracer: createInMemoryTracer(),
+          tracer,
           reflection: {
             summarize: async ({ userMessage, finalText }) =>
               userMessage.trim() && finalText.trim() ? `Turn answered: ${userMessage}` : undefined,
@@ -241,10 +267,28 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
               rule: formatPermissionRule(tool.name, input),
             });
           },
-          model: createAnthropicModelClient({ apiKey: process.env.ANTHROPIC_API_KEY }),
+          model: createConfiguredModelClient({
+            anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+            openaiApiKey: process.env.OPENAI_API_KEY,
+            localModelUrl: process.env.SENTINEL_LOCAL_MODEL_URL,
+            localModelName: process.env.SENTINEL_LOCAL_MODEL_NAME,
+          }),
         });
+        await ignoreTelemetryFailure(logger.info('agent turn completed', { sessionId }), io);
+        if ('flush' in tracer && typeof tracer.flush === 'function') {
+          await ignoreTelemetryFailure(tracer.flush(), io);
+        }
 
         return result.text;
+      } catch (error) {
+        await ignoreTelemetryFailure(
+          logger.error('agent turn failed', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+          io,
+        );
+        throw error;
       } finally {
         db.close();
       }
@@ -450,7 +494,31 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
           return `No replay events for ${sessionId}`;
         }
 
-        return events.map((event) => `${event.actor}: ${JSON.stringify(event.payload)}`).join('\n');
+        const result = await replayRecordedSession({
+          sourceSessionId: sessionId,
+          replaySessionId: `replay:${sessionId}:${Date.now()}`,
+          replay,
+          runTurn: (message) =>
+            runAgent(message, {
+              inbound: { channel: 'cli', userId: 'local', sessionId: `replay:${sessionId}` },
+              confirmTool: async () => false,
+            }),
+        });
+
+        if (result.turns.length === 0) {
+          return `No replayable user messages for ${sessionId}`;
+        }
+
+        return [
+          `Replay ${result.replaySessionId}`,
+          ...result.turns.map((turn) =>
+            [
+              `user: ${turn.userMessage}`,
+              `original: ${turn.originalText ?? '[missing]'}`,
+              `replay: ${turn.replayText}`,
+            ].join('\n'),
+          ),
+        ].join('\n');
       } finally {
         db.close();
       }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemoryTracer } from '../src/observability/tracer.js';
+import { createOtlpTracer } from '../src/observability/otlp-tracer.js';
 import { createCostLedger } from '../src/observability/cost-ledger.js';
 import { createStateDatabase } from '../src/storage/database.js';
 
@@ -46,5 +47,44 @@ describe('observability foundations', () => {
       costUsd: 0.0123,
     });
     db.close();
+  });
+
+  it('exports completed spans to an OTLP endpoint', async () => {
+    const bodies: unknown[] = [];
+    const tracer = createOtlpTracer({
+      endpoint: 'http://localhost:4318/v1/traces',
+      serviceName: 'sentinel',
+      now: (() => {
+        let time = 1_000;
+        return () => {
+          time += 10;
+          return time;
+        };
+      })(),
+      fetch: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Response('{}', { status: 200 });
+      },
+    });
+
+    await tracer.withSpan('turn', { sessionId: 'cli:local:default' }, async () => 'ok');
+    await tracer.flush();
+
+    expect(bodies).toEqual([
+      expect.objectContaining({
+        resourceSpans: [
+          expect.objectContaining({
+            resource: expect.objectContaining({
+              attributes: [expect.objectContaining({ key: 'service.name', value: { stringValue: 'sentinel' } })],
+            }),
+            scopeSpans: [
+              expect.objectContaining({
+                spans: [expect.objectContaining({ name: 'turn' })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
   });
 });

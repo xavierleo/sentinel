@@ -55,6 +55,19 @@ function toAnthropicMessages(messages: ModelMessage[]): Anthropic.Messages.Messa
   return converted;
 }
 
+function toAnthropicSystem(messages: ModelMessage[]) {
+  const systemMessages = messages.filter((message) => message.role === 'system');
+  if (systemMessages.length === 0) {
+    return undefined;
+  }
+
+  return systemMessages.map((message, index) => ({
+    type: 'text' as const,
+    text: message.content,
+    cache_control: index < 2 ? ({ type: 'ephemeral' as const } as const) : undefined,
+  }));
+}
+
 export function createAnthropicModelClient(options: {
   apiKey: string | undefined;
   model?: string;
@@ -73,10 +86,7 @@ export function createAnthropicModelClient(options: {
       const response = await client.messages.create({
         model,
         max_tokens: maxTokens,
-        system: request.messages
-          .filter((message) => message.role === 'system')
-          .map((message) => message.content)
-          .join('\n\n'),
+        system: toAnthropicSystem(request.messages),
         messages: toAnthropicMessages(request.messages),
         tools: request.tools.map((tool) => ({
           name: tool.name,

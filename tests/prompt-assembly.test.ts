@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assembleSystemPrompt } from '../src/context/prompt.js';
+import { assembleCacheableSystemPrompt, assembleSystemPrompt } from '../src/context/prompt.js';
 
 describe('prompt assembly', () => {
   it('assembles stable rules, tools, memory, preferences, and channel instructions in order', () => {
@@ -32,5 +32,23 @@ describe('prompt assembly', () => {
         channelInstructions: '',
       }),
     ).toBe('You are Sentinel.\n\nUser preferences: empty');
+  });
+
+  it('marks stable prompt segments as cacheable at Anthropic boundaries', () => {
+    expect(
+      assembleCacheableSystemPrompt({
+        stableRules: 'You are Sentinel.',
+        toolCatalog: 'Tools: fs_read',
+        memorySummary: 'Inventory memory: empty',
+        preferences: 'User preferences: empty',
+        channelInstructions: 'Channel: CLI',
+      }),
+    ).toEqual([
+      { text: 'You are Sentinel.', cacheControl: true },
+      { text: 'Tools: fs_read', cacheControl: true },
+      { text: 'Inventory memory: empty', cacheControl: false },
+      { text: 'User preferences: empty', cacheControl: false },
+      { text: 'Channel: CLI', cacheControl: false },
+    ]);
   });
 });
