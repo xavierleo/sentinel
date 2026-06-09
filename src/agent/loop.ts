@@ -21,6 +21,7 @@ export interface RunAgentTurnOptions {
   sessions?: SessionRepository;
   memorySummary?: string;
   systemMessages?: ModelMessage[];
+  suggestedSkills?: string[];
   tracer?: Tracer;
   costLedger?: CostSink;
   replay?: ReplaySink;
@@ -89,6 +90,9 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
     ...(options.budgetWarning ? [{ role: 'system' as const, content: options.budgetWarning }] : []),
     ...(options.systemMessages ?? []),
     ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
+    ...(options.suggestedSkills?.length
+      ? [{ role: 'system' as const, content: `Suggested skills: ${options.suggestedSkills.join(', ')}` }]
+      : []),
     { role: 'user', content: options.message },
   ];
 

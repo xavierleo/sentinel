@@ -103,4 +103,15 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(harness.stdout).toEqual(['triage: Triage services']);
   });
+
+  it('matches skills through injected dependencies', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['skill', 'match', 'plex is down'], harness.io, {
+      matchSkills: async (message) => `Matched skills for ${message}:\n- triage`,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stdout).toEqual(['Matched skills for plex is down:\n- triage']);
+  });
 });

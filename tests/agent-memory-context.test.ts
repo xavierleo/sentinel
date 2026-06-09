@@ -28,4 +28,24 @@ describe('agent memory context', () => {
       'user:what containers do we have?',
     ]);
   });
+
+  it('injects suggested skills before the user message', async () => {
+    const seen: string[][] = [];
+    const model: ModelClient = {
+      completeTurn: async ({ messages }) => {
+        seen.push(messages.map((message) => `${message.role}:${message.content}`));
+        return { type: 'text', text: 'loaded suggestion' };
+      },
+    };
+
+    await runAgentTurn({
+      message: 'plex is down',
+      model,
+      tools: createToolRegistry(),
+      permissions: createDefaultPermissionEngine(),
+      suggestedSkills: ['triage-unhealthy-service'],
+    });
+
+    expect(seen[0]).toEqual(['system:Suggested skills: triage-unhealthy-service', 'user:plex is down']);
+  });
 });
