@@ -1,5 +1,9 @@
 import { verifySqliteBackup } from '../storage/backup.js';
 import type { DoctorChecks } from './doctor.js';
+import { access } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { join } from 'node:path';
+import { workspaceGitStatus } from '../workspace/git.js';
 
 export interface StartupCheckOptions {
   backupPath?: string;
@@ -8,6 +12,7 @@ export interface StartupCheckOptions {
   telegramConfigured?: boolean;
   openaiFallbackConfigured?: boolean;
   canWritePath?: (path: string) => Promise<boolean>;
+  workspacePath?: string;
 }
 
 export function createStartupChecks(options: StartupCheckOptions): DoctorChecks {
@@ -35,6 +40,35 @@ export function createStartupChecks(options: StartupCheckOptions): DoctorChecks 
         ok: writable,
         message: writable ? 'runtime log path writable' : 'runtime log path is not writable',
       };
+    },
+    workspace: async () => {
+      if (!options.workspacePath) {
+        return { ok: false, message: 'workspace path is not configured' };
+      }
+
+      const required = ['SOUL.md', 'USER.md', 'AGENTS.md'];
+      const missing: string[] = [];
+      for (const file of required) {
+        try {
+          await access(join(options.workspacePath, file), constants.R_OK);
+        } catch {
+          missing.push(file);
+        }
+      }
+      if (missing.length > 0) {
+        return { ok: false, message: `workspace missing required files: ${missing.join(', ')}` };
+      }
+
+      try {
+        const status = await workspaceGitStatus(options.workspacePath);
+        if (status.dirty) {
+          return { ok: false, message: 'workspace git tree is dirty' };
+        }
+      } catch {
+        return { ok: false, message: 'workspace git repo is not initialized' };
+      }
+
+      return { ok: true, message: 'workspace ready' };
     },
     telegram: async () => ({
       ok: Boolean(options.telegramConfigured),

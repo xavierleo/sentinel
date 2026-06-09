@@ -34,10 +34,24 @@ import {
   createMemorySearchTool,
   createMemorySetPreferenceTool,
 } from './memory.js';
+import {
+  createMemoryRemoveTool,
+  createMemoryReplaceTool,
+  createMemorySetTool,
+  createUserProposeEditTool,
+  createWorkspaceNoteTool,
+  createWorkspaceProposeEditTool,
+  createWorkspaceReadTool,
+} from './workspace.js';
+import { createSkillIndexTool, createSkillViewTool } from './skills.js';
 import { createToolRegistry } from './registry.js';
 import type { MemoryRepository } from '../memory/repository.js';
+import type { StateDatabase } from '../storage/database.js';
 
-export function createDefaultToolRegistry(options: { memory?: MemoryRepository } = {}) {
+export function createDefaultToolRegistry(options: {
+  memory?: MemoryRepository;
+  workspace?: { root: string; proposalsRoot: string; db?: StateDatabase; sessionId?: string };
+} = {}) {
   const registry = createToolRegistry({ structuredErrors: true });
   registry.register(createShellExecTool());
   registry.register(createSystemdListUnitsTool());
@@ -68,6 +82,17 @@ export function createDefaultToolRegistry(options: { memory?: MemoryRepository }
     registry.register(createMemoryNoteTool(options.memory));
     registry.register(createMemoryRememberTool(options.memory));
     registry.register(createMemorySetPreferenceTool(options.memory));
+  }
+  if (options.workspace) {
+    registry.register(createWorkspaceReadTool({ root: options.workspace.root }));
+    registry.register(createMemorySetTool(options.workspace));
+    registry.register(createMemoryReplaceTool(options.workspace));
+    registry.register(createMemoryRemoveTool(options.workspace));
+    registry.register(createUserProposeEditTool(options.workspace));
+    registry.register(createWorkspaceProposeEditTool(options.workspace));
+    registry.register(createWorkspaceNoteTool({ root: options.workspace.root }));
+    registry.register(createSkillIndexTool({ root: options.workspace.root }));
+    registry.register(createSkillViewTool({ root: options.workspace.root }));
   }
   return registry;
 }

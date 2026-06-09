@@ -87,6 +87,26 @@ describe('tool registry', () => {
     });
   });
 
+  it('registers workspace and skill tools when a workspace root is configured', () => {
+    const registry = createDefaultToolRegistry({ workspace: { root: '/tmp/sentinel-workspace', proposalsRoot: '/tmp/sentinel-proposals' } });
+
+    const names = registry.list().map((tool) => tool.name);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'workspace_read',
+        'memory_set',
+        'memory_replace',
+        'memory_remove',
+        'user_propose_edit',
+        'workspace_propose_edit',
+        'workspace_note',
+        'skill_index',
+        'skill_view',
+      ]),
+    );
+  });
+
   it('exposes JSON-schema-compatible tool definitions', () => {
     const registry = createToolRegistry();
     registry.register({

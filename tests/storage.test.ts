@@ -18,8 +18,10 @@ describe('SQLite state storage', () => {
         .map((row) => (row as { name: string }).name);
 
       expect(tables).toContain('audit_events');
+      expect(tables).toContain('proposals_log');
       expect(tables).toContain('schema_migrations');
       expect(tables).toContain('sessions');
+      expect(tables).toContain('skill_uses');
       db.close();
     } finally {
       await rm(root, { recursive: true, force: true });

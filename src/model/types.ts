@@ -3,6 +3,7 @@ import type { ModelToolDefinition } from '../tools/types.js';
 export interface ModelMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  cacheControl?: boolean;
 }
 
 export interface ModelUsage {

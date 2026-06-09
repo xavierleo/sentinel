@@ -1,9 +1,15 @@
 export interface SystemPromptSections {
-  stableRules: string;
+  staticPreamble: string;
+  soul: string;
+  memory: string;
+  userProfile: string;
+  skillsIndex: string;
+  projectContext: string;
+  todayLog: string;
+  yesterdayLog: string;
   toolCatalog: string;
-  memorySummary: string;
-  preferences: string;
-  channelInstructions: string;
+  inventorySummary: string;
+  channelContext: string;
 }
 
 export interface CacheablePromptSegment {
@@ -11,27 +17,36 @@ export interface CacheablePromptSegment {
   cacheControl: boolean;
 }
 
-export function assembleSystemPrompt(sections: SystemPromptSections): string {
+function wrap(tag: string, content: string): string {
+  return content.trim() ? `<${tag}>\n${content.trim()}\n</${tag}>` : '';
+}
+
+function promptSegments(sections: SystemPromptSections): CacheablePromptSegment[] {
   return [
-    sections.stableRules,
-    sections.toolCatalog,
-    sections.memorySummary,
-    sections.preferences,
-    sections.channelInstructions,
+    { text: sections.staticPreamble, cacheControl: true },
+    { text: wrap('soul', sections.soul), cacheControl: false },
+    {
+      text: [wrap('memory', sections.memory), wrap('user_profile', sections.userProfile)].filter(Boolean).join('\n\n'),
+      cacheControl: true,
+    },
+    { text: sections.skillsIndex, cacheControl: true },
+    { text: wrap('project_context', sections.projectContext), cacheControl: false },
+    { text: wrap('today_log', sections.todayLog), cacheControl: false },
+    { text: wrap('yesterday_log', sections.yesterdayLog), cacheControl: false },
+    { text: wrap('tool_catalog', sections.toolCatalog), cacheControl: false },
+    { text: sections.inventorySummary, cacheControl: false },
+    { text: sections.channelContext, cacheControl: false },
   ]
-    .map((section) => section.trim())
-    .filter(Boolean)
+    .map((segment) => ({ ...segment, text: segment.text.trim() }))
+    .filter((segment) => segment.text.length > 0);
+}
+
+export function assembleSystemPrompt(sections: SystemPromptSections): string {
+  return promptSegments(sections)
+    .map((section) => section.text)
     .join('\n\n');
 }
 
 export function assembleCacheableSystemPrompt(sections: SystemPromptSections): CacheablePromptSegment[] {
-  return [
-    { text: sections.stableRules, cacheControl: true },
-    { text: sections.toolCatalog, cacheControl: true },
-    { text: sections.memorySummary, cacheControl: false },
-    { text: sections.preferences, cacheControl: false },
-    { text: sections.channelInstructions, cacheControl: false },
-  ]
-    .map((segment) => ({ ...segment, text: segment.text.trim() }))
-    .filter((segment) => segment.text.length > 0);
+  return promptSegments(sections);
 }
