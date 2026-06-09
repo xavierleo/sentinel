@@ -67,6 +67,13 @@ export interface CliRunContext {
   inbound?: InboundRunContext;
 }
 
+export interface InteractiveChatOptions {
+  stdout: (message: string) => void;
+  ask: () => Promise<string>;
+  runAgent: (message: string, context: CliRunContext) => Promise<string>;
+  confirmTool: (request: CliConfirmationRequest) => Promise<CliConfirmationDecision>;
+}
+
 export interface CliDependencies {
   runAgent: (message: string, context: CliRunContext) => Promise<string>;
   startChat: () => Promise<void>;
@@ -255,6 +262,35 @@ function formatAuditLogs(events: ReturnType<ReturnType<typeof createAuditReposit
   ].join('\n');
 }
 
+export async function createInteractiveChatSession(options: InteractiveChatOptions): Promise<void> {
+  let reloadGeneration = 0;
+  options.stdout('Sentinel chat started. Type /exit, /quit, or /reload.');
+
+  for (;;) {
+    const message = (await options.ask()).trim();
+    if (!message) {
+      continue;
+    }
+
+    if (message === '/exit' || message === '/quit') {
+      return;
+    }
+
+    if (message === '/reload') {
+      reloadGeneration += 1;
+      options.stdout('Workspace snapshot will reload on the next turn.');
+      continue;
+    }
+
+    const sessionId = reloadGeneration === 0 ? 'cli:local:chat' : `cli:local:chat:reload-${reloadGeneration}`;
+    const response = await options.runAgent(message, {
+      inbound: { channel: 'cli', userId: 'local', sessionId },
+      confirmTool: options.confirmTool,
+    });
+    options.stdout(response);
+  }
+}
+
 async function ignoreTelemetryFailure(task: Promise<unknown>, io: CliIo): Promise<void> {
   try {
     await task;
@@ -403,28 +439,16 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
 
   const startChat: CliDependencies['startChat'] = async () => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    io.stdout('Sentinel chat started. Type /exit or /quit to leave.');
-
     try {
-      for (;;) {
-        const message = (await rl.question('sentinel> ')).trim();
-        if (!message) {
-          continue;
-        }
-
-        if (message === '/exit' || message === '/quit') {
-          return;
-        }
-
-        const response = await runAgent(message, {
-          inbound: { channel: 'cli', userId: 'local', sessionId: 'cli:local:chat' },
-          confirmTool: async (request) => {
-            const confirm = io.confirmTool ?? defaultIo.confirmTool;
-            return confirm ? confirm(request) : false;
-          },
-        });
-        io.stdout(response);
-      }
+      await createInteractiveChatSession({
+        stdout: io.stdout,
+        ask: () => rl.question('sentinel> '),
+        runAgent,
+        confirmTool: async (request) => {
+          const confirm = io.confirmTool ?? defaultIo.confirmTool;
+          return confirm ? confirm(request) : false;
+        },
+      });
     } finally {
       rl.close();
     }
