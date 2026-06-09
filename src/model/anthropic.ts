@@ -61,11 +61,14 @@ function toAnthropicSystem(messages: ModelMessage[]) {
     return undefined;
   }
 
-  return systemMessages.map((message, index) => ({
-    type: 'text' as const,
-    text: message.content,
-    cache_control: index < 2 ? ({ type: 'ephemeral' as const } as const) : undefined,
-  }));
+  return systemMessages.map((message, index) => {
+    const cacheControl = message.cacheControl ?? index < 2;
+    return {
+      type: 'text' as const,
+      text: message.content,
+      cache_control: cacheControl ? ({ type: 'ephemeral' as const } as const) : undefined,
+    };
+  });
 }
 
 export function createAnthropicModelClient(options: {

@@ -18,6 +18,7 @@ export type DoctorCheckName =
   | 'backup'
   | 'model'
   | 'logs'
+  | 'workspace'
   | 'telegram'
   | 'providerFallback'
   | 'scheduler';
@@ -30,6 +31,7 @@ const checkOrder: DoctorCheckName[] = [
   'backup',
   'model',
   'logs',
+  'workspace',
   'telegram',
   'providerFallback',
   'scheduler',

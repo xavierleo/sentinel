@@ -20,6 +20,7 @@ export interface RunAgentTurnOptions {
   sessionId?: string;
   sessions?: SessionRepository;
   memorySummary?: string;
+  systemMessages?: ModelMessage[];
   tracer?: Tracer;
   costLedger?: CostSink;
   replay?: ReplaySink;
@@ -86,6 +87,7 @@ async function executeAgentTurn(options: RunAgentTurnOptions): Promise<AgentTurn
   options.replay?.recordEvent({ sessionId, actor: 'user', kind: 'message', payload: { text: options.message } });
   const messages: ModelMessage[] = [
     ...(options.budgetWarning ? [{ role: 'system' as const, content: options.budgetWarning }] : []),
+    ...(options.systemMessages ?? []),
     ...(options.memorySummary ? [{ role: 'system' as const, content: options.memorySummary }] : []),
     { role: 'user', content: options.message },
   ];

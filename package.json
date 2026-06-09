@@ -20,6 +20,8 @@
     "commander": "^14.0.1",
     "execa": "^9.6.0",
     "grammy": "^1.43.0",
+    "gray-matter": "^4.0.3",
+    "simple-git": "^3.36.0",
     "yaml": "^2.9.0",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.24.6"

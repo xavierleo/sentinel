@@ -70,4 +70,37 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(harness.stdout.join('\n')).toContain('Milestone: 7 hardening');
   });
+
+  it('runs workspace initialization through injected dependencies', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['init'], harness.io, {
+      initWorkspace: async () => 'Workspace initialized: /tmp/sentinel-workspace',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stdout).toEqual(['Workspace initialized: /tmp/sentinel-workspace']);
+  });
+
+  it('routes workspace proposal subcommands through injected dependencies', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['workspace', 'list-proposals'], harness.io, {
+      listWorkspaceProposals: async () => 'No workspace proposals',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stdout).toEqual(['No workspace proposals']);
+  });
+
+  it('lists skills through injected dependencies', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['skill', 'list'], harness.io, {
+      listSkills: async () => 'triage: Triage services',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stdout).toEqual(['triage: Triage services']);
+  });
 });

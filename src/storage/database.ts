@@ -122,6 +122,28 @@ const migrations = [
       );
     `,
   },
+  {
+    version: 6,
+    sql: `
+      create table if not exists proposals_log (
+        id text primary key,
+        kind text not null,
+        target text not null,
+        session_id text not null,
+        created_at integer not null,
+        resolved_at integer,
+        resolution text
+      );
+
+      create table if not exists skill_uses (
+        id integer primary key autoincrement,
+        skill_name text not null,
+        session_id text not null,
+        timestamp integer not null,
+        outcome text not null
+      );
+    `,
+  },
 ];
 
 export function createStateDatabase(path: string): StateDatabase {

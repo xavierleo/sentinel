@@ -5,13 +5,16 @@ import { describe, expect, it } from 'vitest';
 import { createStartupChecks } from '../src/ops/startup-checks.js';
 import { runDoctor } from '../src/ops/doctor.js';
 import { createStateDatabase } from '../src/storage/database.js';
+import { scaffoldWorkspace } from '../src/workspace/scaffold.js';
 
 describe('startup checks', () => {
   it('builds the full doctor check set used by daemon startup', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sentinel-startup-checks-'));
     const backupPath = join(root, 'backup.db');
+    const workspacePath = join(root, 'workspace');
     const db = createStateDatabase(backupPath);
     db.close();
+    await scaffoldWorkspace({ root: workspacePath });
 
     try {
       const result = await runDoctor({
@@ -22,6 +25,7 @@ describe('startup checks', () => {
           telegramConfigured: true,
           openaiFallbackConfigured: true,
           canWritePath: async () => true,
+          workspacePath,
         }),
       });
 
@@ -32,6 +36,7 @@ describe('startup checks', () => {
         'backup',
         'model',
         'logs',
+        'workspace',
         'telegram',
         'providerFallback',
         'scheduler',
