@@ -7,7 +7,7 @@ import { createProposalQueue } from '../src/workspace/proposals.js';
 
 async function tempRoot() {
   const root = join(tmpdir(), `sentinel-proposals-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-  const proposalsRoot = join(root, '..', 'proposals');
+  const proposalsRoot = join(root, 'proposals');
   await mkdir(root, { recursive: true });
   return { root, proposalsRoot };
 }

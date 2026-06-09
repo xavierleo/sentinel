@@ -114,4 +114,15 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(harness.stdout).toEqual(['Matched skills for plex is down:\n- triage']);
   });
+
+  it('runs consolidation through injected dependencies', async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(['consolidate', 'cli:local:chat'], harness.io, {
+      consolidateSession: async (sessionId) => `Consolidated ${sessionId}: 1 proposal`,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(harness.stdout).toEqual(['Consolidated cli:local:chat: 1 proposal']);
+  });
 });
