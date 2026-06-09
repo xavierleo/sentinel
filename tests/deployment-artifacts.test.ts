@@ -28,4 +28,16 @@ describe('deployment hardening artifacts', () => {
     expect(policy).toContain('rotate 14');
     expect(policy).toContain('compress');
   });
+
+  it('defines network egress allowlist deployment guidance', async () => {
+    const compose = await readFile('deploy/docker-compose.yml', 'utf8');
+    const policy = await readFile('deploy/egress-allowlist.nft', 'utf8');
+
+    expect(compose).toContain('SENTINEL_EGRESS_ALLOWLIST');
+    expect(policy).toContain('api.anthropic.com');
+    expect(policy).toContain('api.openai.com');
+    expect(policy).toContain('api.telegram.org');
+    expect(policy).toContain('ip daddr 127.0.0.0/8 accept');
+    expect(policy).toContain('counter drop');
+  });
 });

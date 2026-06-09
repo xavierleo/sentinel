@@ -9,6 +9,7 @@ export interface DaemonRunnerOptions {
   runStartupChecks: () => Promise<DoctorResult>;
   startHealthServer: () => Promise<DaemonStopHandle>;
   refreshOnce: () => Promise<void>;
+  runScheduledBackup?: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   refreshIntervalMs: number;
 }
@@ -40,12 +41,14 @@ export function createDaemonRunner(options: DaemonRunnerOptions) {
     async runOnce(): Promise<void> {
       await start();
       await options.refreshOnce();
+      await options.runScheduledBackup?.();
     },
 
     async runForever(): Promise<void> {
       await start();
       while (!stopped) {
         await options.refreshOnce();
+        await options.runScheduledBackup?.();
         if (!stopped) {
           await options.sleep(options.refreshIntervalMs);
         }

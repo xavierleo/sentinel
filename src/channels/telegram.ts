@@ -29,6 +29,7 @@ export interface TelegramChannelOptions {
   authorizedUserId: number;
   runAgent: ChannelRunner;
   maxMessageLength?: number;
+  progressMessage?: string;
 }
 
 interface PendingConfirmation {
@@ -53,8 +54,17 @@ function splitTelegramMessage(text: string, maxLength: number): string[] {
   }
 
   const chunks: string[] = [];
-  for (let index = 0; index < text.length; index += maxLength) {
-    chunks.push(text.slice(index, index + maxLength));
+  let remaining = text.trim();
+  while (remaining.length > maxLength) {
+    const window = remaining.slice(0, maxLength + 1);
+    const sentenceBoundary = Math.max(window.lastIndexOf('. '), window.lastIndexOf('! '), window.lastIndexOf('? '));
+    const splitAt = sentenceBoundary > 0 ? sentenceBoundary + 1 : maxLength;
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  if (remaining.length > 0) {
+    chunks.push(remaining);
   }
   return chunks;
 }
@@ -73,6 +83,10 @@ export function createTelegramChannel(options: TelegramChannelOptions): Channel 
     const chatId = ctx.chat?.id;
     if (!text || chatId === undefined) {
       return;
+    }
+
+    if (options.progressMessage) {
+      await ctx.reply(options.progressMessage);
     }
 
     const response = await options.runAgent(text, {
@@ -165,6 +179,7 @@ export function createGrammyTelegramChannel(options: {
     bot: new Bot(options.token) as unknown as TelegramBotLike,
     authorizedUserId: options.authorizedUserId,
     runAgent: options.runAgent,
+    progressMessage: 'Working on it...',
   });
   channel.registerHandlers();
   return channel;

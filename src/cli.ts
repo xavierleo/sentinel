@@ -1,5 +1,6 @@
 import { Command } from 'commander';
-import { mkdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -32,6 +33,7 @@ import type { PermissionRuleDecision } from './permissions/rules.js';
 import { createSessionLockManager } from './sessions/lock-manager.js';
 import { createSessionRepository } from './sessions/repository.js';
 import { createAuditRepository } from './storage/audit.js';
+import { createBackupScheduler } from './storage/backup-scheduler.js';
 import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
@@ -108,8 +110,37 @@ function backupPath(): string | undefined {
   return process.env.SENTINEL_BACKUP_PATH;
 }
 
+function backupDir(): string {
+  return process.env.SENTINEL_BACKUP_DIR ?? join(homedir(), '.sentinel', 'backups');
+}
+
 function runtimeLogPath(): string {
   return process.env.SENTINEL_LOG_PATH ?? '/var/log/sentinel/sentinel.jsonl';
+}
+
+function telegramConfigured(): boolean {
+  return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_USER_ID);
+}
+
+async function canWritePath(path: string): Promise<boolean> {
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await access(dirname(path), constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createDefaultStartupChecks() {
+  return createStartupChecks({
+    backupPath: backupPath(),
+    hasModelApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
+    logPath: runtimeLogPath(),
+    telegramConfigured: telegramConfigured(),
+    openaiFallbackConfigured: Boolean(process.env.OPENAI_API_KEY),
+    canWritePath,
+  });
 }
 
 async function createPermissionEngine() {
@@ -392,6 +423,10 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
 
     async startDaemon() {
       let ready = false;
+      const backupScheduler = createBackupScheduler({
+        sourcePath: stateDbPath(),
+        backupDir: backupDir(),
+      });
       const runner = createDaemonRunner({
         recoverInFlightSessions: async () => {
           const dbPath = stateDbPath();
@@ -410,10 +445,7 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         },
         runStartupChecks: async () =>
           runDoctor({
-            checks: createStartupChecks({
-              backupPath: backupPath(),
-              hasModelApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
-            }),
+            checks: createDefaultStartupChecks(),
           }),
         startHealthServer: async () => {
           const server = await createHealthServer({
@@ -427,6 +459,12 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         refreshOnce: async () => {
           await refreshMemory();
           ready = true;
+        },
+        runScheduledBackup: async () => {
+          const result = await backupScheduler.runIfDue();
+          if (result.ran) {
+            io.stdout(`Backup completed: ${result.backupPath}`);
+          }
         },
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         refreshIntervalMs: Number(process.env.SENTINEL_REFRESH_INTERVAL_MS ?? 15 * 60_000),
@@ -539,10 +577,7 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
 
     async runDoctor() {
       const result = await runDoctor({
-        checks: createStartupChecks({
-          backupPath: backupPath(),
-          hasModelApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
-        }),
+        checks: createDefaultStartupChecks(),
       });
 
       return [

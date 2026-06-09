@@ -13,6 +13,7 @@ services:
       NODE_ENV: production
       SENTINEL_DB_PATH: /var/lib/sentinel/sentinel.db
       SENTINEL_PERMISSIONS_PATH: /var/lib/sentinel/permissions.yaml
+      SENTINEL_EGRESS_ALLOWLIST: api.anthropic.com,api.openai.com,api.telegram.org,127.0.0.0/8
     env_file:
       - .env
     volumes:

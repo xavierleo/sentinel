@@ -32,6 +32,26 @@ describe('daemon runner', () => {
     expect(events).toEqual(['doctor', 'health', 'refresh', 'health-stop']);
   });
 
+  it('runs due scheduled backup jobs after refresh cycles', async () => {
+    const events: string[] = [];
+    const runner = createDaemonRunner({
+      runStartupChecks: async () => ({ ok: true, checks: [] }),
+      startHealthServer: async () => ({ stop: async () => {} }),
+      refreshOnce: async () => {
+        events.push('refresh');
+      },
+      runScheduledBackup: async () => {
+        events.push('backup');
+      },
+      sleep: async () => {},
+      refreshIntervalMs: 15 * 60_000,
+    });
+
+    await runner.runOnce();
+
+    expect(events).toEqual(['refresh', 'backup']);
+  });
+
   it('recovers in-flight sessions before startup checks and health begin', async () => {
     const events: string[] = [];
     const runner = createDaemonRunner({
