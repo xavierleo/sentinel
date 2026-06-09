@@ -28,6 +28,7 @@ import type { PermissionRuleDecision } from './permissions/rules.js';
 import { createSessionLockManager } from './sessions/lock-manager.js';
 import { createSessionRepository } from './sessions/repository.js';
 import { createAuditRepository } from './storage/audit.js';
+import { verifySqliteBackup } from './storage/backup.js';
 import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
@@ -98,6 +99,10 @@ function stateDbPath(): string {
 
 function permissionRulesPath(): string {
   return process.env.SENTINEL_PERMISSIONS_PATH ?? join(homedir(), '.sentinel', 'permissions.yaml');
+}
+
+function backupPath(): string | undefined {
+  return process.env.SENTINEL_BACKUP_PATH;
 }
 
 async function createPermissionEngine() {
@@ -455,6 +460,14 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
         checks: {
           database: async () => ({ ok: true, message: 'database check configured' }),
           auditLog: async () => ({ ok: true, message: 'audit check configured' }),
+          backup: async () => {
+            const path = backupPath();
+            if (!path) {
+              return { ok: false, message: 'SENTINEL_BACKUP_PATH is not configured' };
+            }
+
+            return verifySqliteBackup(path);
+          },
           model: async () => ({ ok: Boolean(process.env.ANTHROPIC_API_KEY), message: process.env.ANTHROPIC_API_KEY ? 'model key configured' : 'ANTHROPIC_API_KEY is missing' }),
           scheduler: async () => ({ ok: true, message: 'scheduler idle' }),
         },

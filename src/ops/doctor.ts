@@ -12,11 +12,11 @@ export interface DoctorResult {
   checks: NamedDoctorCheck[];
 }
 
-export type DoctorCheckName = 'database' | 'auditLog' | 'model' | 'scheduler';
+export type DoctorCheckName = 'database' | 'auditLog' | 'backup' | 'model' | 'scheduler';
 
 export type DoctorChecks = Partial<Record<DoctorCheckName, () => Promise<DoctorCheckResult>>>;
 
-const checkOrder: DoctorCheckName[] = ['database', 'auditLog', 'model', 'scheduler'];
+const checkOrder: DoctorCheckName[] = ['database', 'auditLog', 'backup', 'model', 'scheduler'];
 
 export async function runDoctor(options: { checks: DoctorChecks }): Promise<DoctorResult> {
   const checks: NamedDoctorCheck[] = [];
