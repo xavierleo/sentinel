@@ -17,6 +17,7 @@ import { evaluateBudgetPolicy } from './observability/budget-policy.js';
 import { createReplayRepository } from './observability/replay.js';
 import { createInMemoryTracer } from './observability/tracer.js';
 import { runDoctor } from './ops/doctor.js';
+import { createStartupChecks } from './ops/startup-checks.js';
 import { createDefaultPermissionEngine } from './permissions/engine.js';
 import {
   addPermissionRule as addPermissionRuleToFile,
@@ -28,7 +29,6 @@ import type { PermissionRuleDecision } from './permissions/rules.js';
 import { createSessionLockManager } from './sessions/lock-manager.js';
 import { createSessionRepository } from './sessions/repository.js';
 import { createAuditRepository } from './storage/audit.js';
-import { verifySqliteBackup } from './storage/backup.js';
 import { createStateDatabase } from './storage/database.js';
 import { createContainerListTool } from './tools/container.js';
 import { createDefaultToolRegistry } from './tools/index.js';
@@ -349,13 +349,27 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
     async startDaemon() {
       let ready = false;
       const runner = createDaemonRunner({
+        recoverInFlightSessions: async () => {
+          const dbPath = stateDbPath();
+          await mkdir(dirname(dbPath), { recursive: true });
+          const db = createStateDatabase(dbPath);
+          const sessions = createSessionRepository(db);
+
+          try {
+            const recovered = sessions.recoverInFlightSessions({ failedAt: Date.now() });
+            if (recovered.length > 0) {
+              io.stdout(`Recovered ${recovered.length} in-flight session step${recovered.length === 1 ? '' : 's'}`);
+            }
+          } finally {
+            db.close();
+          }
+        },
         runStartupChecks: async () =>
           runDoctor({
-            checks: {
-              database: async () => ({ ok: true, message: 'database check configured' }),
-              auditLog: async () => ({ ok: true, message: 'audit check configured' }),
-              scheduler: async () => ({ ok: true, message: 'scheduler idle' }),
-            },
+            checks: createStartupChecks({
+              backupPath: backupPath(),
+              hasModelApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
+            }),
           }),
         startHealthServer: async () => {
           const server = await createHealthServer({
@@ -457,20 +471,10 @@ function createDefaultDependencies(io: CliIo): CliDependencies {
 
     async runDoctor() {
       const result = await runDoctor({
-        checks: {
-          database: async () => ({ ok: true, message: 'database check configured' }),
-          auditLog: async () => ({ ok: true, message: 'audit check configured' }),
-          backup: async () => {
-            const path = backupPath();
-            if (!path) {
-              return { ok: false, message: 'SENTINEL_BACKUP_PATH is not configured' };
-            }
-
-            return verifySqliteBackup(path);
-          },
-          model: async () => ({ ok: Boolean(process.env.ANTHROPIC_API_KEY), message: process.env.ANTHROPIC_API_KEY ? 'model key configured' : 'ANTHROPIC_API_KEY is missing' }),
-          scheduler: async () => ({ ok: true, message: 'scheduler idle' }),
-        },
+        checks: createStartupChecks({
+          backupPath: backupPath(),
+          hasModelApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
+        }),
       });
 
       return [

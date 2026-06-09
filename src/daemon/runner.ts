@@ -5,6 +5,7 @@ export interface DaemonStopHandle {
 }
 
 export interface DaemonRunnerOptions {
+  recoverInFlightSessions?: () => Promise<void>;
   runStartupChecks: () => Promise<DoctorResult>;
   startHealthServer: () => Promise<DaemonStopHandle>;
   refreshOnce: () => Promise<void>;
@@ -20,6 +21,8 @@ export function createDaemonRunner(options: DaemonRunnerOptions) {
     if (health) {
       return;
     }
+
+    await options.recoverInFlightSessions?.();
 
     const doctor = await options.runStartupChecks();
     if (!doctor.ok) {
